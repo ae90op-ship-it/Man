@@ -1,0 +1,6 @@
+{
+  "name": "ملاحظات كيب - Google Keep & sketches",
+  "description": "A high-fidelity notes and handwriting whiteboard companion inspired by Google Keep, designed for drawing digital sketches, resizing local photos, maintaining dynamic lists, and filtering custom tag categorizations with full Arabic/English localization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
