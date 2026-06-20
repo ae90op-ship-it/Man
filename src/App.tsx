@@ -159,13 +159,13 @@ export default function App() {
     if (savedLanguage === 'en') setIsAr(false);
   }, []);
 
-  // Save changes to localStorage whenever notes or labels updates
-  const saveNotesToStorage = (updatedNotes: Note[]) => {
+  // Save changes to localStorage whenever notes or labels updates asynchronously (Dexie / localforage ready)
+  const saveNotesToStorage = async (updatedNotes: Note[]) => {
     setNotes(updatedNotes);
     localStorage.setItem('keep_notes', JSON.stringify(updatedNotes));
   };
 
-  const saveLabelsToStorage = (updatedLabels: Label[]) => {
+  const saveLabelsToStorage = async (updatedLabels: Label[]) => {
     setLabels(updatedLabels);
     localStorage.setItem('keep_labels', JSON.stringify(updatedLabels));
   };
@@ -189,7 +189,7 @@ export default function App() {
   // ----------------------------------------------------
   
   // Create / Update Note
-  const handleSaveNote = (noteData: Partial<Note>) => {
+  const handleSaveNote = async (noteData: Partial<Note>) => {
     if (activeEditingNote) {
       // Editing Mode
       const updated = notes.map(n => {
@@ -202,7 +202,7 @@ export default function App() {
         }
         return n;
       });
-      saveNotesToStorage(updated);
+      await saveNotesToStorage(updated);
       setActiveEditingNote(null);
     } else {
       // Creation Mode
@@ -228,43 +228,43 @@ export default function App() {
         updatedAt: Date.now()
       };
       
-      saveNotesToStorage([brandNewNote, ...notes]);
+      await saveNotesToStorage([brandNewNote, ...notes]);
       setIsNewEditorModalOpen(false);
     }
   };
 
   // Quick incremental update from card hover actions
-  const handleUpdateNoteField = (noteId: string, updates: Partial<Note>) => {
+  const handleUpdateNoteField = async (noteId: string, updates: Partial<Note>) => {
     const updated = notes.map(n => {
       if (n.id === noteId) {
         return { ...n, ...updates, updatedAt: Date.now() };
       }
       return n;
     });
-    saveNotesToStorage(updated);
+    await saveNotesToStorage(updated);
   };
 
   // Restoration or Trashing
-  const handleRestoreNote = (noteId: string) => {
+  const handleRestoreNote = async (noteId: string) => {
     const updated = notes.map(n => {
       if (n.id === noteId) {
         return { ...n, isTrashed: false, updatedAt: Date.now() };
       }
       return n;
     });
-    saveNotesToStorage(updated);
+    await saveNotesToStorage(updated);
   };
 
   // Physical deletion / Permanent delete from Trash
-  const handlePermanentDeleteNote = (noteId: string) => {
+  const handlePermanentDeleteNote = async (noteId: string) => {
     const remaining = notes.filter(n => n.id !== noteId);
-    saveNotesToStorage(remaining);
+    await saveNotesToStorage(remaining);
   };
 
   // Wipe Trash completely empty
-  const handleWipeTrash = () => {
+  const handleWipeTrash = async () => {
     const saved = notes.filter(n => !n.isTrashed);
-    saveNotesToStorage(saved);
+    await saveNotesToStorage(saved);
     setIsConfirmingWipeTrash(false);
   };
 
@@ -278,21 +278,21 @@ export default function App() {
   // ----------------------------------------------------
   // LABEL LABELS CRUD ACTIONS
   // ----------------------------------------------------
-  const handleAddLabel = (name: string) => {
+  const handleAddLabel = async (name: string) => {
     const newLbl: Label = { id: `lbl-${generateId()}`, name };
     const nextLabels = [...labels, newLbl];
-    saveLabelsToStorage(nextLabels);
+    await saveLabelsToStorage(nextLabels);
   };
 
-  const handleUpdateLabel = (id: string, name: string) => {
+  const handleUpdateLabel = async (id: string, name: string) => {
     const nextLabels = labels.map(l => l.id === id ? { ...l, name } : l);
-    saveLabelsToStorage(nextLabels);
+    await saveLabelsToStorage(nextLabels);
   };
 
-  const handleDeleteLabel = (id: string) => {
+  const handleDeleteLabel = async (id: string) => {
     // Remove label definition
     const nextLabels = labels.filter(l => l.id !== id);
-    saveLabelsToStorage(nextLabels);
+    await saveLabelsToStorage(nextLabels);
 
     // Clean label references in all notes
     const nextNotes = notes.map(note => {
@@ -305,7 +305,7 @@ export default function App() {
       }
       return note;
     });
-    saveNotesToStorage(nextNotes);
+    await saveNotesToStorage(nextNotes);
 
     // If active section is this label, fall back to notes
     if (currentSection === id) {
@@ -328,13 +328,16 @@ export default function App() {
 
       // Section sorting
       if (currentSection === 'notes') {
-        return !note.isTrashed;
+        return !note.isTrashed && !note.isArchived;
+      }
+      if (currentSection === 'archive') {
+        return !note.isTrashed && note.isArchived;
       }
       if (currentSection === 'trash') {
         return note.isTrashed;
       }
-      // Section is actually a Label ID
-      return !note.isTrashed && note.labels.includes(currentSection);
+      // Section is actually a Label ID (excludes archived and trashed)
+      return !note.isTrashed && !note.isArchived && note.labels.includes(currentSection);
     });
   };
 
@@ -347,6 +350,7 @@ export default function App() {
   // Active section metadata display title
   const getActiveSectionTitle = () => {
     if (currentSection === 'notes') return isAr ? 'الملاحظات' : 'Notes';
+    if (currentSection === 'archive') return isAr ? 'الأرشيف' : 'Archive';
     if (currentSection === 'trash') return isAr ? 'سلة المهملات' : 'Trash';
     const activeLabel = labels.find(l => l.id === currentSection);
     return activeLabel ? activeLabel.name : '';
@@ -500,6 +504,19 @@ export default function App() {
 
           {/* Separation list */}
           <div className="hidden md:block w-full h-px bg-zinc-150 dark:bg-zinc-850 my-2" />
+
+          {/* Switch: Archive */}
+          <button
+            onClick={() => setCurrentSection('archive')}
+            className={`flex items-center gap-3 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
+              currentSection === 'archive'
+                ? 'bg-amber-500/10 dark:bg-amber-500/5 text-amber-650 dark:text-amber-450 border border-amber-500/20 shadow-xs'
+                : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-850 hover:text-zinc-800 dark:hover:text-zinc-200 border border-transparent'
+            }`}
+          >
+            <Archive className="h-4.5 w-4.5" />
+            <span>{isAr ? 'الأرشيف' : 'Archive'}</span>
+          </button>
 
           {/* Switch: Trash */}
           <button

@@ -14,7 +14,9 @@ import {
   MoreVertical,
   Check,
   Type,
-  LayoutGrid
+  LayoutGrid,
+  Brain,
+  Sparkles
 } from 'lucide-react';
 import { Note, Label, NOTE_COLORS, ChecklistItem, DrawingPath } from '../types';
 import { compressAndResizeImage, generateId } from '../utils';
@@ -72,6 +74,10 @@ export default function NoteEditor({
   const [showColorMenu, setShowColorMenu] = useState(false);
   const [showLabelMenu, setShowLabelMenu] = useState(false);
   const [isExpanded, setIsExpanded] = useState(!isModal ? false : true); // inline editor starts collapsed
+
+  // AI states
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Refs for tracking focus
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -404,6 +410,82 @@ export default function NoteEditor({
     });
   };
 
+  // Helper to gather note contents for AI tasks
+  const getNoteTextBody = () => {
+    if (isChecklist) {
+      return checklistItems.map(item => `- [${item.completed ? 'x' : ' '}] ${item.text}`).join('\n');
+    }
+    if (isTable) {
+      return tableData.map(row => row.join(' | ')).join('\n');
+    }
+    return content;
+  };
+
+  const handleAiSummarize = async () => {
+    const textToSummarize = getNoteTextBody();
+    if (!textToSummarize.trim()) return;
+    setIsAiLoading(true);
+    setAiError(null);
+    try {
+      const response = await fetch('/api/ai/summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content: textToSummarize })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to summarize');
+      }
+      const data = await response.json();
+      
+      if (isChecklist) setIsChecklist(false);
+      if (isTable) setIsTable(false);
+      
+      setContent(prev => {
+        const suffix = isAr 
+          ? `\n\n=== 🤖 تلخيص الذكاء الاصطناعي ===\n${data.result}`
+          : `\n\n=== 🤖 AI Summary ===\n${data.result}`;
+        return (prev.trim() ? prev + suffix : data.result);
+      });
+    } catch (err: any) {
+      setAiError(isAr ? 'عذراً، فشل استدعاء الذكاء الاصطناعي.' : 'Oops, AI service failed.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleAiExpand = async () => {
+    const textToExpand = getNoteTextBody();
+    setIsAiLoading(true);
+    setAiError(null);
+    try {
+      const response = await fetch('/api/ai/expand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content: textToExpand })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to generate ideas');
+      }
+      const data = await response.json();
+      
+      if (isChecklist) setIsChecklist(false);
+      if (isTable) setIsTable(false);
+
+      setContent(prev => {
+        const suffix = isAr 
+          ? `\n\n=== 💡 أفكار ملهمة مقترحة ===\n${data.result}`
+          : `\n\n=== 💡 Suggested Ideas ===\n${data.result}`;
+        return (prev.trim() ? prev + suffix : data.result);
+      });
+    } catch (err: any) {
+      setAiError(isAr ? 'عذراً، فشلت عملية توليد الأفكار.' : 'Oops, idea generation failed.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
   // Render the inner editor inputs
   const renderEditorBody = () => {
     const uncompletedItems = checklistItems.filter(item => !item.completed);
@@ -537,8 +619,9 @@ export default function NoteEditor({
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            disabled={isAiLoading}
             placeholder={isAr ? 'العنوان' : 'Title'}
-            className="w-full text-base font-extrabold focus:outline-hidden placeholder-zinc-400 dark:placeholder-zinc-600 bg-transparent py-1.5"
+            className="w-full text-base font-extrabold focus:outline-hidden placeholder-zinc-400 dark:placeholder-zinc-600 bg-transparent py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
           />
 
           <button
@@ -678,9 +761,10 @@ export default function NoteEditor({
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
+            disabled={isAiLoading}
             placeholder={isAr ? 'اكتب ملاحظتك هنا...' : 'Take a note...'}
             rows={isModal ? 8 : 3}
-            className="w-full text-xs font-medium focus:outline-hidden bg-transparent resize-none placeholder-zinc-400 dark:placeholder-zinc-650 leading-relaxed scrollbar-none"
+            className="w-full text-xs font-medium focus:outline-hidden bg-transparent resize-none placeholder-zinc-400 dark:placeholder-zinc-650 leading-relaxed scrollbar-none disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ minHeight: isModal ? '180px' : '80px' }}
           />
         )}
@@ -704,6 +788,30 @@ export default function NoteEditor({
 
         {/* Main attached image catalog - Bottom position */}
         {imagePosition === 'bottom' && renderEditorImages()}
+
+        {/* AI Loading status & Error alerts */}
+        {isAiLoading && (
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 mt-2 animate-pulse" dir={isAr ? 'rtl' : 'ltr'}>
+            <Sparkles className="h-4 w-4 animate-spin shrink-0" />
+            <span>{isAr ? 'برجاء الانتظار، جاري معالجة الملاحظة عبر الذكاء الاصطناعي...' : 'Please wait, processing note via Gemini AI...'}</span>
+          </div>
+        )}
+
+        {aiError && (
+          <div className="flex items-center justify-between gap-2 text-xs font-bold text-rose-600 dark:text-rose-450 bg-rose-500/10 p-2.5 rounded-xl border border-rose-500/20 mt-2" dir={isAr ? 'rtl' : 'ltr'}>
+            <div className="flex items-center gap-2">
+              <span className="shrink-0">⚠️</span>
+              <span>{aiError}</span>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => setAiError(null)} 
+              className="text-sm px-1.5 hover:text-rose-800 dark:hover:text-rose-200 cursor-pointer font-black"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* Action bar widgets */}
         <div className="flex flex-wrap items-center justify-between border-t border-zinc-150/50 dark:border-zinc-800/55 pt-3.5 mt-2 gap-3">
@@ -801,8 +909,9 @@ export default function NoteEditor({
             {/* Image Upload Input selector */}
             <button
               type="button"
+              disabled={isAiLoading}
               onClick={() => fileInputRef.current?.click()}
-              className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
+              className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors disabled:opacity-55"
               title={isAr ? 'إضافة صورة' : 'Upload photo'}
             >
               <ImageIcon className="h-4 w-4" />
@@ -815,6 +924,36 @@ export default function NoteEditor({
               multiple
               className="hidden"
             />
+
+            {/* AI Summary Button */}
+            <button
+              type="button"
+              disabled={isAiLoading || (!content.trim() && !isChecklist && !isTable)}
+              onClick={handleAiSummarize}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center ${
+                isAiLoading 
+                  ? 'text-amber-500 bg-amber-500/15 animate-pulse' 
+                  : 'text-amber-600 dark:text-amber-400 hover:bg-amber-100/50 dark:hover:bg-amber-950/20'
+              } disabled:opacity-30 disabled:cursor-not-allowed`}
+              title={isAr ? 'تلخيص كيب الذكي (Gemini)' : 'Smart Keep Summary (Gemini)'}
+            >
+              <Brain className="h-4.5 w-4.5" />
+            </button>
+
+            {/* AI Expand/Ideas Button */}
+            <button
+              type="button"
+              disabled={isAiLoading || (!title.trim() && !content.trim() && !isChecklist && !isTable)}
+              onClick={handleAiExpand}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center ${
+                isAiLoading 
+                  ? 'text-purple-500 bg-purple-500/15 animate-pulse' 
+                  : 'text-purple-600 dark:text-purple-400 hover:bg-purple-100/50 dark:hover:bg-purple-950/20'
+              } disabled:opacity-30 disabled:cursor-not-allowed`}
+              title={isAr ? 'توليد أفكار وملهمات (Gemini)' : 'Generate ideas & inspiration (Gemini)'}
+            >
+              <Sparkles className="h-4.5 w-4.5" />
+            </button>
 
             {/* Toggle Checklist vs Text */}
             <button
@@ -858,7 +997,8 @@ export default function NoteEditor({
               <button
                 type="button"
                 onClick={onCancel}
-                className="py-1.5 px-3.5 text-xs font-bold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
+                disabled={isAiLoading}
+                className="py-1.5 px-3.5 text-xs font-bold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isAr ? 'إلغاء' : 'Cancel'}
               </button>
@@ -867,7 +1007,8 @@ export default function NoteEditor({
             <button
               type="button"
               onClick={submitNote}
-              className="py-1.5 px-4 bg-zinc-900 hover:bg-zinc-805 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-transform active:scale-95 flex items-center gap-1.5"
+              disabled={isAiLoading}
+              className="py-1.5 px-4 bg-zinc-900 hover:bg-zinc-805 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-transform active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check className="h-3.5 w-3.5" />
               <span>{isAr ? 'حفظ' : 'Close & Save'}</span>
