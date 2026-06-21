@@ -1,1209 +1,1458 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Lightbulb, 
-  Tag as TagIcon, 
-  Archive, 
-  Trash2, 
-  Plus, 
-  Search, 
-  Grid, 
-  List, 
-  Languages, 
-  FolderEdit, 
-  NotebookPen,
-  Pin,
-  Clock,
-  LayoutGrid,
-  CheckSquare,
+import {
   HelpCircle,
-  Paintbrush,
-  Type,
-  Settings,
-  Sun,
-  Moon,
-  ShieldAlert
+  Trophy,
+  Sparkles,
+  Volume2,
+  VolumeX,
+  Timer,
+  ChevronLeft,
+  BookOpen,
+  Info,
+  Play,
+  Check,
+  X,
+  Dices,
+  RotateCcw,
+  Sliders,
+  AlertCircle,
+  Cpu,
+  User,
+  Lightbulb,
+  Loader2,
+  Users,
+  Copy,
+  LogOut,
+  Medal,
+  Award,
+  Zap,
+  CheckCircle2,
+  Smartphone
 } from 'lucide-react';
 
-import { Note, Label, NOTE_COLORS } from './types';
-import { generateId } from './utils';
-import NoteCard from './components/NoteCard';
-import NoteEditor from './components/NoteEditor';
-import LabelManager from './components/LabelManager';
-import SettingsModal from './components/SettingsModal';
+import { CATEGORIES, CategoryKey, Round, GameState, Difficulty, ARABIC_LETTERS } from './types';
+import {
+  generateId,
+  startsWithLetter,
+  setMuteState,
+  getMuteState,
+  playSuccessSound,
+  playWrongSound,
+  playTickSound
+} from './utils';
 
-// Initial Starter Notes to populate the app beautifully on first boot
-const STARTER_LABELS: Label[] = [
-  { id: 'l-creative', name: 'أفكار إبداعية / Creative' },
-  { id: 'l-work', name: 'مهام العمل / Work' },
-  { id: 'l-personal', name: 'شخصي / Personal' }
+import LetterSelector from './components/LetterSelector';
+import TickingTimer from './components/TickingTimer';
+import ResultsDashboard from './components/ResultsDashboard';
+import RulesModal from './components/RulesModal';
+
+export interface Badge {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+}
+
+export const BADGES_CONFIG: Badge[] = [
+  { id: 'win_streak_5', title: 'بطل الانتصارات المتتالية 👑', description: 'التفوق والفوز بـ 5 جولات متتالية باللعبة', icon: '🔥' },
+  { id: 'perfect_70', title: 'المكتشف الفصيح 🎯', description: 'الحصول على درجة كاملة 70/70 في جولة واحدة', icon: '💎' },
+  { id: 'speed_demon', title: 'الصاروخ الخارق ⚡', description: 'إنهاء الحلول والضغط على STOP مع بقاء أكثر من 60 ثانية بالعداد', icon: '🚀' },
+  { id: 'no_hints', title: 'العبقري المكتفي 🧠', description: 'الفوز بالمواجهة دون استخدام أي تلميحات مطلقاً', icon: '⭐' },
+  { id: 'coin_150', title: 'صائد الثروات 🪙', description: 'تجميع والوصول إلى ما يزيد عن 150 نقطة في رصيدك', icon: '💰' },
+  { id: 'veteran_10', title: 'شغف التحدي المستمر 🌟', description: 'خوض ولعب 10 جولات إجمالاً باللعبة', icon: '🏆' }
 ];
 
-const STARTER_NOTES = (labels: Label[]): Note[] => [
-  {
-    id: 'note-1',
-    title: 'أهلاً بك في منظم الملاحظات الإبداعي! 🎨✨',
-    content: 'هذا التطبيق مصمم ليعمل تماماً مثل Google Keep مع دعم كامل للرسم الحر وإدراج الصور والملاحظات الملونة.\n\nالمميزات الحالية:\n- ✍️ ارسم بيدك مع تراجع وإعادة وتعديل الرسم لاحقاً.\n- 🖼️ ارفع صورك واكتب تفاصيلها بترميز عالي الأداء.\n- 🎨 اختر ألواناً رائعة لبطاقاتك الإبداعية.\n- 📌 ثبت الملاحظات الهامة في الأعلى.\n- 🏷️ صنف ملاحظاتك ونقّب فيها عبر شريط البحث الذكي.\n- 📱 متجاوب تماماً للهواتف والأجهزة اللوحية!',
-    isChecklist: false,
-    checklistItems: [],
-    color: 'indigo',
-    isPinned: true,
-    isArchived: false,
-    isTrashed: false,
-    labels: [labels[0].id],
-    drawingData: null,
-    images: [],
-    createdAt: Date.now() - 3600000 * 2,
-    updatedAt: Date.now() - 3600000 * 2
-  },
-  {
-    id: 'note-2',
-    title: 'قائمة مهام اليومية 🗒️🕊️',
-    content: '',
-    isChecklist: true,
-    checklistItems: [
-      { id: 'c-1', text: 'شرب كوب من القهوة الدافئة ☕', completed: true },
-      { id: 'c-2', text: 'رسم المخطط الكروكي للواجهة الجديدة 🎨', completed: false },
-      { id: 'c-3', text: 'رفع الصور وتجربة ضغط الملفات لتوفير الاستهلاك 🖼️', completed: false },
-      { id: 'c-4', text: 'مراجعة المهام المكتملة والأرشيف 🚀', completed: true }
-    ],
-    color: 'teal',
-    isPinned: true,
-    isArchived: false,
-    isTrashed: false,
-    labels: [labels[1].id],
-    drawingData: null,
-    images: [],
-    createdAt: Date.now() - 3600000,
-    updatedAt: Date.now()
+export interface PlayerInRoom {
+  id: 'p1' | 'p2';
+  name: string;
+  answers: Record<CategoryKey, string>;
+  isReady: boolean;
+  hasSubmitted: boolean;
+  score: number;
+  results: any;
+  overallVerdict: string;
+}
+
+export interface MultiplayerRoom {
+  code: string;
+  letter: string;
+  difficulty: string;
+  durationSeconds: number;
+  status: 'lobby' | 'playing' | 'grading' | 'results';
+  timerStartedAt: number | null;
+  p1: PlayerInRoom | null;
+  p2: PlayerInRoom | null;
+  whoTriggeredStop: string | null;
+  lastUpdated: number;
+}
+
+const TIMER_PRESETS = [
+  { label: '60 ثانية (حماسي)', value: 60 },
+  { label: '90 ثانية (معتدل)', value: 90 },
+  { label: '120 ثانية (مهلة إضافية)', value: 120 },
+  { label: 'مفتوح (دون وقت)', value: 0 }
+];
+
+const checkAndUnlockBadges = (
+  history: Round[],
+  points: number,
+  unlockedList: string[],
+  currentRoundData?: { totalScore: number; timerRemaining: number; hintsUsed: number; didWin: boolean }
+) => {
+  const newlyUnlocked: string[] = [];
+
+  // 1. Streak 5 wins (consecutive rounds where player score > opponent score)
+  if (!unlockedList.includes('win_streak_5') && history.length >= 5) {
+    let currentStreak = 0;
+    let maxStreak = 0;
+    // Walk through history in chronological order (reverse of history array)
+    const chronoHistory = [...history].reverse();
+    for (const r of chronoHistory) {
+      const pScore = r.totalScore || 0;
+      const oScore = r.opponentTotalScore || 0;
+      if (pScore > oScore) {
+        currentStreak++;
+        if (currentStreak > maxStreak) maxStreak = currentStreak;
+      } else {
+        currentStreak = 0;
+      }
+    }
+    if (maxStreak >= 5) {
+      newlyUnlocked.push('win_streak_5');
+    }
   }
-];
+
+  // 2. Perfect score
+  if (!unlockedList.includes('perfect_70')) {
+    const hasPerfect = history.some(r => r.totalScore === 70) || (currentRoundData && currentRoundData.totalScore === 70);
+    if (hasPerfect) newlyUnlocked.push('perfect_70');
+  }
+
+  // 3. Speed Demon
+  if (!unlockedList.includes('speed_demon') && currentRoundData && currentRoundData.timerRemaining > 60 && currentRoundData.totalScore > 0) {
+    newlyUnlocked.push('speed_demon');
+  }
+
+  // 4. No hints
+  if (!unlockedList.includes('no_hints') && currentRoundData && currentRoundData.didWin && currentRoundData.hintsUsed === 0) {
+    newlyUnlocked.push('no_hints');
+  }
+
+  // 5. Coin 150
+  if (!unlockedList.includes('coin_150') && points >= 150) {
+    newlyUnlocked.push('coin_150');
+  }
+
+  // 6. Veteran 10 total played
+  if (!unlockedList.includes('veteran_10') && history.length >= 10) {
+    newlyUnlocked.push('veteran_10');
+  }
+
+  return newlyUnlocked;
+};
 
 export default function App() {
-  // Sync core lists
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [labels, setLabels] = useState<Label[]>([]);
-  
-  // Navigation & Filtering
-  const [currentSection, setCurrentSection] = useState<'notes' | 'trash' | string>('notes'); // labelId can be a section
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // Core config states
-  const [viewLayout, setViewLayout] = useState<'grid' | 'list'>(() => {
-    const saved = localStorage.getItem('keep_layout');
-    return (saved as 'grid' | 'list') || 'grid';
-  });
-  const [isAr, setIsAr] = useState<boolean>(() => {
-    const saved = localStorage.getItem('keep_language');
-    if (saved === 'en') return false;
-    return true; // default Arabic
-  });
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
-    const saved = localStorage.getItem('keep_theme') as 'light' | 'dark' | 'system' | null;
-    return saved || 'dark';
-  });
-
-  // Custom typography states
-  const [fontFamily, setFontFamily] = useState<string>(() => {
-    return localStorage.getItem('keep_font_family') || 'cairo';
-  });
-  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg' | 'xl'>(() => {
-    const saved = localStorage.getItem('keep_font_size') as 'sm' | 'base' | 'lg' | 'xl' | null;
-    return saved || 'base';
-  });
-
-  // Security: PIN lock for whole application
-  const [appLockEnabled, setAppLockEnabled] = useState<boolean>(() => {
-    return localStorage.getItem('keep_app_lock_enabled') === 'true';
-  });
-  const [appLockPIN, setAppLockPIN] = useState<string>(() => {
-    return localStorage.getItem('keep_app_lock_pin') || '1234';
-  });
-  const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
-    const enabled = localStorage.getItem('keep_app_lock_enabled') === 'true';
-    const pin = localStorage.getItem('keep_app_lock_pin') || '1234';
-    return enabled && !!pin;
-  });
-
-  // Private locked notes password
-  const [notesPassword, setNotesPassword] = useState<string>(() => {
-    return localStorage.getItem('keep_notes_password') || '1234';
-  });
-
-  // Trash & Reminders Auto delete config
-  const [autoDeleteDays, setAutoDeleteDays] = useState<number>(() => {
-    const saved = localStorage.getItem('keep_auto_delete_days');
-    return saved ? parseInt(saved, 10) : 30;
-  });
-
-  // Reminder alarm style selection
-  const [reminderAlertStyle, setReminderAlertStyle] = useState<'chime' | 'beep' | 'silent'>(() => {
-    const saved = localStorage.getItem('keep_reminder_alert_style') as 'chime' | 'beep' | 'silent' | null;
-    return saved || 'beep';
-  });
-
-  // Simulated Google Cloud Drive sync stats
-  const [isSyncConnected, setIsSyncConnected] = useState<boolean>(() => {
-    return localStorage.getItem('keep_sync_connected') === 'true';
-  });
-  const [syncEmail, setSyncEmail] = useState<string>(() => {
-    return localStorage.getItem('keep_sync_email') || 'ae90op@gmail.com';
-  });
-  const [lastSyncTime, setLastSyncTime] = useState<number | null>(() => {
-    const saved = localStorage.getItem('keep_last_sync_time');
-    return saved ? parseInt(saved, 10) : null;
-  });
-
-  // Lock Screen Input state
-  const [enteredPIN, setEnteredPIN] = useState('');
-  const [lockError, setLockError] = useState(false);
-
-  // Edit states variables
-  const [activeEditingNote, setActiveEditingNote] = useState<Note | null>(null);
-  const [isNewEditorModalOpen, setIsNewEditorModalOpen] = useState(false);
-  const [newEditorStartWithWhiteboard, setNewEditorStartWithWhiteboard] = useState(false);
-  const [newEditorStartWithTable, setNewEditorStartWithTable] = useState(false);
-  const [showAddOptions, setShowAddOptions] = useState(false);
-  const [isLabelManagerOpen, setIsLabelManagerOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isConfirmingWipeTrash, setIsConfirmingWipeTrash] = useState(false);
-
-  // Synchronize CSS Class with Theme parameter
-  useEffect(() => {
-    const updateTheme = () => {
-      let activeTheme: 'light' | 'dark' = 'dark';
-      if (theme === 'system') {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        activeTheme = prefersDark ? 'dark' : 'light';
-      } else {
-        activeTheme = theme === 'dark' ? 'dark' : 'light';
-      }
-
-      if (activeTheme === 'dark') {
-        document.documentElement.classList.add('dark');
-        document.documentElement.style.colorScheme = 'dark';
-      } else {
-        document.documentElement.classList.remove('dark');
-        document.documentElement.style.colorScheme = 'light';
-      }
+  // Game states
+  const [gameState, setGameState] = useState<GameState>(() => {
+    return {
+      currentRound: {
+        letter: '',
+        answers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        opponentAnswers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        opponentProgress: { boy: 'idle', girl: 'idle', animal: 'idle', plant: 'idle', inanimate: 'idle', country: 'idle', food: 'idle' },
+        dynamicPlaceholders: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        difficulty: 'medium',
+        durationSeconds: 0,
+        status: 'idle'
+      },
+      roundsHistory: []
     };
+  });
 
-    updateTheme();
-    localStorage.setItem('keep_theme', theme);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<Difficulty>('medium');
+  const [timerMaxSeconds, setTimerMaxSeconds] = useState<number>(90);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(90);
+  const [isTimerActive, setIsTimerActive] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(false);
+  
+  // Game coins/points & Hints mechanics
+  const HINT_COST_POINTS = 20;
+  const [userPoints, setUserPoints] = useState<number>(() => {
+    const saved = localStorage.getItem('stop_game_user_points');
+    return saved ? parseInt(saved, 10) : 100; // start with more coins for multiplayer support and higher hint price!
+  });
 
-    if (theme === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const listener = () => updateTheme();
-      mediaQuery.addEventListener('change', listener);
-      return () => mediaQuery.removeEventListener('change', listener);
-    }
-  }, [theme]);
+  // Badges system local states
+  const [unlockedBadges, setUnlockedBadges] = useState<string[]>(() => {
+    const saved = localStorage.getItem('stop_game_unlocked_badges');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [badgeToasts, setBadgeToasts] = useState<Badge[]>([]);
 
-  // Persistent savers
+  // Local Multiplayer States
+  const [multiplayerMode, setMultiplayerMode] = useState<boolean>(false);
+  const [multiplayerRoom, setMultiplayerRoom] = useState<MultiplayerRoom | null>(null);
+  const [playerId, setPlayerId] = useState<'p1' | 'p2' | null>(null);
+  const [roomCode, setRoomCode] = useState<string>('');
+  const [playerName, setPlayerName] = useState<string>(() => {
+    const saved = localStorage.getItem('stop_game_player_name');
+    return saved || 'بطل الحروف ' + Math.floor(1000 + Math.random() * 9000);
+  });
+  const [joinCodeInput, setJoinCodeInput] = useState<string>('');
+  const [isLoadingRoom, setIsLoadingRoom] = useState<boolean>(false);
+  const [multiplayerError, setMultiplayerError] = useState<string | null>(null);
+
+  const [hintErrorCategory, setHintErrorCategory] = useState<Record<CategoryKey, string | null>>({
+    boy: null, girl: null, animal: null, plant: null, inanimate: null, country: null, food: null
+  });
+
+  // Modals
+  const [isRulesOpen, setIsRulesOpen] = useState<boolean>(false);
+  const [isApiKeyActive, setIsApiKeyActive] = useState<boolean | null>(null);
+
+  // Dynamic hints database state for the current active round
+  const [hints, setHints] = useState<Record<CategoryKey, { word: string; loading: boolean }>>({
+    boy: { word: '', loading: false },
+    girl: { word: '', loading: false },
+    animal: { word: '', loading: false },
+    plant: { word: '', loading: false },
+    inanimate: { word: '', loading: false },
+    country: { word: '', loading: false },
+    food: { word: '', loading: false }
+  });
+
+  // AI Opponent simulation live status states
+  const [opponentProgress, setOpponentProgress] = useState<Record<CategoryKey, 'idle' | 'typing' | 'done'>>({
+    boy: 'idle', girl: 'idle', animal: 'idle', plant: 'idle', inanimate: 'idle', country: 'idle', food: 'idle'
+  });
+  const [opponentAnswers, setOpponentAnswers] = useState<Record<CategoryKey, string>>({
+    boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: ''
+  });
+  const [dynamicPlaceholders, setDynamicPlaceholders] = useState<Record<CategoryKey, string>>({
+    boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: ''
+  });
+
+  // Loading states message carousel
+  const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
+  const loadingMessages = [
+    'جاري استدعاء الحكم جيميناي للفصل في المعاني اللغوية بينك وبين الخصم...',
+    'الذكاء الاصطناعي يراجع إجاباتك وإجابات الخصم في القواميس والمعاجم...',
+    'الحكم التلقائي الذكي يقيّم البدايات ويوزّع الدرجات بعدالة صارمة...',
+    'فحص شامل للمأكولات والجمادات والبلدان التراثية بين الخصمين...',
+    'توليد النتيجة الفورية واحتساب من سيفوز بكأس الجولة الحالية...'
+  ];
+
+  // Store total time spent in this round
+  const [actualTimeElapsed, setActualTimeElapsed] = useState(0);
+
+  // References and timers
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const opponentTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load history on mount
   useEffect(() => {
-    localStorage.setItem('keep_layout', viewLayout);
-  }, [viewLayout]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_language', isAr ? 'ar' : 'en');
-  }, [isAr]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_font_family', fontFamily);
-  }, [fontFamily]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_font_size', fontSize);
-  }, [fontSize]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_app_lock_enabled', appLockEnabled ? 'true' : 'false');
-  }, [appLockEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_app_lock_pin', appLockPIN);
-  }, [appLockPIN]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_notes_password', notesPassword);
-  }, [notesPassword]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_auto_delete_days', autoDeleteDays.toString());
-  }, [autoDeleteDays]);
-
-  useEffect(() => {
-    localStorage.setItem('keep_reminder_alert_style', reminderAlertStyle);
-  }, [reminderAlertStyle]);
-
-  // Sync utilities
-  const handleConnectSync = (email: string) => {
-    setIsSyncConnected(true);
-    setSyncEmail(email);
-    localStorage.setItem('keep_sync_connected', 'true');
-    localStorage.setItem('keep_sync_email', email);
-  };
-
-  const handleDisconnectSync = () => {
-    setIsSyncConnected(false);
-    localStorage.setItem('keep_sync_connected', 'false');
-  };
-
-  const handleTriggerSyncNow = async () => {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => {
-        const timestamp = Date.now();
-        setLastSyncTime(timestamp);
-        localStorage.setItem('keep_last_sync_time', timestamp.toString());
-        localStorage.setItem('keep_cloud_sync_backup', JSON.stringify(notes));
-        resolve();
-      }, 1500);
-    });
-  };
-
-  const handleWipeAllData = () => {
-    setNotes([]);
-    setLabels(STARTER_LABELS);
-    localStorage.removeItem('keep_notes');
-    localStorage.removeItem('keep_labels');
-    setViewLayout('grid');
-    setFontFamily('cairo');
-    setFontSize('base');
-    setAppLockEnabled(false);
-    setAppLockPIN('1234');
-    setNotesPassword('1234');
-    setAutoDeleteDays(30);
-    setReminderAlertStyle('beep');
-    setIsSyncConnected(false);
-    setSyncEmail('ae90op@gmail.com');
-    setLastSyncTime(null);
-  };
-
-  // Load state from localStorage on mount
-  useEffect(() => {
-    const savedLabels = localStorage.getItem('keep_labels');
-    const savedNotes = localStorage.getItem('keep_notes');
-    const savedLayout = localStorage.getItem('keep_layout');
-    const savedLanguage = localStorage.getItem('keep_language');
-
-    // Parse labels
-    let parsedLabels: Label[] = [];
-    if (savedLabels) {
+    const savedHistory = localStorage.getItem('stop_game_history');
+    if (savedHistory) {
       try {
-        parsedLabels = JSON.parse(savedLabels);
-        setLabels(parsedLabels);
+        const parsed = JSON.parse(savedHistory);
+        setGameState(prev => ({
+          ...prev,
+          roundsHistory: parsed
+        }));
       } catch (e) {
-        parsedLabels = STARTER_LABELS;
-        setLabels(parsedLabels);
+        console.error("Failed to parse history", e);
       }
-    } else {
-      parsedLabels = STARTER_LABELS;
-      setLabels(parsedLabels);
-      localStorage.setItem('keep_labels', JSON.stringify(parsedLabels));
     }
 
-    // Parse notes
-    if (savedNotes) {
-      try {
-        const parsedNotes: Note[] = JSON.parse(savedNotes);
-        const migratedNotes = parsedNotes.map(n => {
-          if (n.isArchived) {
-            return { ...n, isArchived: false, isTrashed: true, updatedAt: Date.now() };
-          }
-          return n;
-        });
-        setNotes(migratedNotes);
-      } catch (e) {
-        setNotes(STARTER_NOTES(parsedLabels));
-      }
-    } else {
-      const starters = STARTER_NOTES(parsedLabels).map(n => {
-        if (n.isArchived) {
-          return { ...n, isArchived: false, isTrashed: true };
-        }
-        return n;
-      });
-      setNotes(starters);
-      localStorage.setItem('keep_notes', JSON.stringify(starters));
-    }
+    const savedMuted = localStorage.getItem('stop_game_muted') === 'true';
+    setIsMuted(savedMuted);
+    setMuteState(savedMuted);
 
-    // Parse config
-    if (savedLayout === 'list') setViewLayout('list');
-    if (savedLanguage === 'en') setIsAr(false);
-
-    // Load custom settings definitions
-    const savedFontFamily = localStorage.getItem('keep_font_family');
-    if (savedFontFamily) setFontFamily(savedFontFamily);
-
-    const savedFontSize = localStorage.getItem('keep_font_size') as 'sm' | 'base' | 'lg' | 'xl' | null;
-    if (savedFontSize) setFontSize(savedFontSize);
-
-    const savedAppLockEnabled = localStorage.getItem('keep_app_lock_enabled') === 'true';
-    setAppLockEnabled(savedAppLockEnabled);
-
-    const savedAppLockPIN = localStorage.getItem('keep_app_lock_pin');
-    if (savedAppLockPIN) setAppLockPIN(savedAppLockPIN);
-
-    if (savedAppLockEnabled && savedAppLockPIN) {
-      setIsAppLocked(true);
-    }
-
-    const savedNotesPassword = localStorage.getItem('keep_notes_password');
-    if (savedNotesPassword) setNotesPassword(savedNotesPassword);
-
-    const savedAutoDeleteDays = localStorage.getItem('keep_auto_delete_days');
-    if (savedAutoDeleteDays) setAutoDeleteDays(parseInt(savedAutoDeleteDays));
-
-    const savedReminderStyle = localStorage.getItem('keep_reminder_alert_style') as 'chime' | 'beep' | 'silent' | null;
-    if (savedReminderStyle) setReminderAlertStyle(savedReminderStyle);
-
-    const savedSyncConnected = localStorage.getItem('keep_sync_connected') === 'true';
-    setIsSyncConnected(savedSyncConnected);
-
-    const savedSyncEmail = localStorage.getItem('keep_sync_email');
-    if (savedSyncEmail) setSyncEmail(savedSyncEmail);
-
-    const savedLastSyncTime = localStorage.getItem('keep_last_sync_time');
-    if (savedLastSyncTime) setLastSyncTime(parseInt(savedLastSyncTime));
+    // Warm up/check if API configuration exists on the server side
+    checkApiStatus();
   }, []);
 
-  // Save changes to localStorage whenever notes or labels updates asynchronously (Dexie / localforage ready)
-  const saveNotesToStorage = async (updatedNotes: Note[]) => {
-    setNotes(updatedNotes);
-    localStorage.setItem('keep_notes', JSON.stringify(updatedNotes));
-  };
-
-  const saveLabelsToStorage = async (updatedLabels: Label[]) => {
-    setLabels(updatedLabels);
-    localStorage.setItem('keep_labels', JSON.stringify(updatedLabels));
-  };
-
-  // Toggle layout
-  const handleToggleLayout = () => {
-    const nextLayout = viewLayout === 'grid' ? 'list' : 'grid';
-    setViewLayout(nextLayout);
-    localStorage.setItem('keep_layout', nextLayout);
-  };
-
-  // Toggle language
-  const handleToggleLanguage = () => {
-    const nextAr = !isAr;
-    setIsAr(nextAr);
-    localStorage.setItem('keep_language', nextAr ? 'ar' : 'en');
-  };
-
-  // ----------------------------------------------------
-  // NOTE CRUD ACTIONS
-  // ----------------------------------------------------
-  
-  // Create / Update Note
-  const handleSaveNote = async (noteData: Partial<Note>) => {
-    // If incoming noteData says isArchived: true, convert to isTrashed: true
-    const shouldTrash = noteData.isArchived || noteData.isTrashed || false;
-
-    if (activeEditingNote) {
-      // Editing Mode
-      const updated = notes.map(n => {
-        if (n.id === activeEditingNote.id) {
-          return {
-            ...n,
-            ...noteData,
-            isArchived: false,
-            isTrashed: shouldTrash,
-            updatedAt: Date.now()
-          };
-        }
-        return n;
+  const checkApiStatus = async () => {
+    try {
+      const res = await fetch('/api/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ letter: 'أ', answers: {} })
       });
-      await saveNotesToStorage(updated);
-      setActiveEditingNote(null);
-    } else {
-      // Creation Mode
-      const brandNewNote: Note = {
-        id: generateId(),
-        title: noteData.title || '',
-        content: noteData.content || '',
-        isChecklist: noteData.isChecklist || false,
-        checklistItems: noteData.checklistItems || [],
-        color: noteData.color || 'default',
-        isPinned: noteData.isPinned || false,
-        isArchived: false,
-        isTrashed: shouldTrash,
-        labels: noteData.labels || [],
-        drawingData: noteData.drawingData || null,
-        drawingPaths: noteData.drawingPaths || [],
-        images: noteData.images || [],
-        imagePosition: noteData.imagePosition || 'top',
-        imageSize: noteData.imageSize || 'medium',
-        isTable: noteData.isTable || false,
-        tableData: noteData.tableData || [],
-        createdAt: Date.now(),
-        updatedAt: Date.now()
+      const data = await res.json();
+      setIsApiKeyActive(!data.fallback);
+    } catch {
+      setIsApiKeyActive(false);
+    }
+  };
+
+  const triggerBadgeToast = (badge: Badge) => {
+    setBadgeToasts(prev => [...prev, badge]);
+    playSuccessSound();
+    setTimeout(() => {
+      setBadgeToasts(prev => prev.filter(b => b.id !== badge.id));
+    }, 5500);
+  };
+
+  // Create Room
+  const handleCreateRoom = async () => {
+    if (!playerName) return;
+    setIsLoadingRoom(true);
+    setMultiplayerError(null);
+    try {
+      const res = await fetch('/api/multiplayer/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: playerName, difficulty: selectedDifficulty, durationSeconds: timerMaxSeconds })
+      });
+      if (!res.ok) throw new Error("فشل إنشاء الغرفة بالخادم.");
+      const data = await res.json();
+      if (data.success) {
+        setRoomCode(data.room.code);
+        setPlayerId('p1');
+        setMultiplayerRoom(data.room);
+        setMultiplayerMode(true);
+      } else {
+        throw new Error(data.error || "خطأ غير معروف");
+      }
+    } catch (e: any) {
+      setMultiplayerError(e.message);
+    } finally {
+      setIsLoadingRoom(false);
+    }
+  };
+
+  // Join Room
+  const handleJoinRoom = async () => {
+    const trimmedCode = joinCodeInput.trim();
+    if (!trimmedCode || !playerName) return;
+    setIsLoadingRoom(true);
+    setMultiplayerError(null);
+    try {
+      const res = await fetch('/api/multiplayer/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: trimmedCode, name: playerName })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "كود الغرفة غير صحيح أو ممتلئة.");
+      }
+      const data = await res.json();
+      if (data.success) {
+        setRoomCode(trimmedCode);
+        setPlayerId('p2');
+        setMultiplayerRoom(data.room);
+        setMultiplayerMode(true);
+      }
+    } catch (e: any) {
+      setMultiplayerError(e.message);
+    } finally {
+      setIsLoadingRoom(false);
+    }
+  };
+
+  // Start Multiplayer Round as P1 (Host)
+  const handleMultiplayerStart = async () => {
+    if (!roomCode) return;
+    setIsTimerActive(false);
+    const randomLetter = ARABIC_LETTERS[Math.floor(Math.random() * ARABIC_LETTERS.length)];
+    try {
+      await fetch('/api/multiplayer/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: roomCode,
+          letter: randomLetter,
+          difficulty: selectedDifficulty,
+          durationSeconds: timerMaxSeconds
+        })
+      });
+    } catch (err) {
+      console.error("Failed to trigger start on server:", err);
+    }
+  };
+
+  // Submit Multiplayer answers
+  const handleMultiplayerSubmit = async (isTriggerStop = true) => {
+    if (!roomCode || !playerId) return;
+    setIsTimerActive(false);
+    try {
+      await fetch('/api/multiplayer/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: roomCode,
+          playerId,
+          answers: gameState.currentRound.answers,
+          isTriggerStop
+        })
+      });
+    } catch (err) {
+      console.error("Failed to submit answers to room:", err);
+    }
+  };
+
+  // Restart Lobby
+  const handleMultiplayerRestart = async () => {
+    if (!roomCode) return;
+    try {
+      await fetch('/api/multiplayer/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: roomCode })
+      });
+    } catch (err) {
+      console.error("Failed to restart room:", err);
+    }
+  };
+
+  const handleExitMultiplayer = () => {
+    setMultiplayerMode(false);
+    setRoomCode('');
+    setPlayerId(null);
+    setMultiplayerRoom(null);
+    handleRestart(); // reset to clear fields and idle status
+  };
+
+  // Save Player Name preference
+  const handleSavePlayerName = (name: string) => {
+    setPlayerName(name);
+    localStorage.setItem('stop_game_player_name', name);
+  };
+
+  // Multiplayer Polling Loop
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
+    if (multiplayerMode && roomCode && playerId) {
+      const poll = async () => {
+        try {
+          const res = await fetch(`/api/multiplayer/state?code=${roomCode}&playerId=${playerId}`);
+          if (!res.ok) {
+            throw new Error("حدث خطأ أثناء التزامن اللحظي مع الغرفة.");
+          }
+          const data = await res.json();
+          if (data.success && data.room) {
+            const room: MultiplayerRoom = data.room;
+            setMultiplayerRoom(room);
+            setMultiplayerError(null);
+
+            // 1. Sync PLAYING
+            if (room.status === 'playing') {
+              if (gameState.currentRound.status !== 'playing') {
+                playSuccessSound();
+                setGameState(prev => ({
+                  ...prev,
+                  currentRound: {
+                    ...prev.currentRound,
+                    letter: room.letter,
+                    difficulty: room.difficulty as Difficulty,
+                    status: 'playing',
+                    answers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' }
+                  }
+                }));
+
+                if (room.timerStartedAt) {
+                  const elapsed = Math.floor((Date.now() - room.timerStartedAt) / 1000);
+                  const remaining = Math.max(0, room.durationSeconds - elapsed);
+                  setSecondsRemaining(remaining);
+                  setTimerMaxSeconds(room.durationSeconds);
+                  setIsTimerActive(room.durationSeconds > 0);
+                  setActualTimeElapsed(elapsed);
+                }
+              } else {
+                if (room.whoTriggeredStop) {
+                  setIsTimerActive(false);
+                }
+              }
+            }
+            // 2. Sync GRADING
+            else if (room.status === 'grading') {
+              if (gameState.currentRound.status !== 'submitting') {
+                setIsTimerActive(false);
+                setGameState(prev => ({
+                  ...prev,
+                  currentRound: {
+                    ...prev.currentRound,
+                    status: 'submitting'
+                  }
+                }));
+              }
+            }
+            // 3. Sync RESULTS
+            else if (room.status === 'results') {
+              if (gameState.currentRound.status !== 'reviewing') {
+                setIsTimerActive(false);
+                setGameState(prev => ({
+                  ...prev,
+                  currentRound: {
+                    ...prev.currentRound,
+                    status: 'reviewing'
+                  }
+                }));
+
+                // Award points & run Badging System on results sync
+                const me = playerId === 'p1' ? room.p1 : room.p2;
+                const opp = playerId === 'p1' ? room.p2 : room.p1;
+                if (me && opp) {
+                  const gained = me.score > opp.score ? 50 : me.score === opp.score ? 15 : 0;
+                  const nextPoints = userPoints + gained;
+                  if (gained > 0) {
+                    setUserPoints(nextPoints);
+                    localStorage.setItem('stop_game_user_points', nextPoints.toString());
+                  }
+
+                  // Build local history item to persist progress
+                  const customRound: Round = {
+                    id: generateId(),
+                    letter: room.letter,
+                    answers: me.answers,
+                    opponentAnswers: opp.answers,
+                    results: me.results,
+                    opponentResults: opp.results,
+                    overallVerdict: me.overallVerdict,
+                    totalScore: me.score,
+                    opponentTotalScore: opp.score,
+                    durationSeconds: Math.floor((Date.now() - (room.timerStartedAt || Date.now())) / 1000),
+                    createdAt: Date.now()
+                  };
+
+                  const updatedHistory = [customRound, ...gameState.roundsHistory];
+                  localStorage.setItem('stop_game_history', JSON.stringify(updatedHistory));
+                  setGameState(prev => ({ ...prev, roundsHistory: updatedHistory }));
+
+                  // Badge evaluations
+                  const newlyUnlocked = checkAndUnlockBadges(
+                    updatedHistory,
+                    nextPoints,
+                    unlockedBadges,
+                    {
+                      totalScore: me.score,
+                      timerRemaining: 0,
+                      hintsUsed: 0,
+                      didWin: me.score > opp.score
+                    }
+                  );
+                  if (newlyUnlocked.length > 0) {
+                    const merged = [...unlockedBadges, ...newlyUnlocked];
+                    setUnlockedBadges(merged);
+                    localStorage.setItem('stop_game_unlocked_badges', JSON.stringify(merged));
+                    newlyUnlocked.forEach(badgeId => {
+                      const bConf = BADGES_CONFIG.find(bc => bc.id === badgeId);
+                      if (bConf) triggerBadgeToast(bConf);
+                    });
+                  }
+                }
+              }
+            }
+            // 4. Reset back to LOBBY
+            else if (room.status === 'lobby') {
+              if (gameState.currentRound.status !== 'idle') {
+                setGameState(prev => ({
+                  ...prev,
+                  currentRound: {
+                    ...prev.currentRound,
+                    status: 'idle',
+                    letter: '',
+                    answers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' }
+                  }
+                }));
+              }
+            }
+          }
+        } catch (e: any) {
+          console.error("Multiplayer polling sync error:", e);
+          setMultiplayerError(e.message);
+        }
       };
-      
-      await saveNotesToStorage([brandNewNote, ...notes]);
-      setIsNewEditorModalOpen(false);
+
+      poll();
+      intervalId = setInterval(poll, 1500);
     }
-  };
 
-  // Quick incremental update from card hover actions
-  const handleUpdateNoteField = async (noteId: string, updates: Partial<Note>) => {
-    const updated = notes.map(n => {
-      if (n.id === noteId) {
-        const shouldTrash = updates.isArchived || updates.isTrashed || n.isTrashed || false;
-        return { 
-          ...n, 
-          ...updates, 
-          isArchived: false, 
-          isTrashed: shouldTrash, 
-          updatedAt: Date.now() 
-        };
-      }
-      return n;
-    });
-    await saveNotesToStorage(updated);
-  };
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [multiplayerMode, roomCode, playerId, gameState.currentRound.status, unlockedBadges, userPoints]);
 
-  // Restoration or Trashing
-  const handleRestoreNote = async (noteId: string) => {
-    const updated = notes.map(n => {
-      if (n.id === noteId) {
-        return { ...n, isTrashed: false, updatedAt: Date.now() };
-      }
-      return n;
-    });
-    await saveNotesToStorage(updated);
-  };
+  // Timer interval processor
+  useEffect(() => {
+    if (isTimerActive) {
+      timerIntervalRef.current = setInterval(() => {
+        setActualTimeElapsed(prev => prev + 1);
 
-  // Physical deletion / Permanent delete from Trash
-  const handlePermanentDeleteNote = async (noteId: string) => {
-    const remaining = notes.filter(n => n.id !== noteId);
-    await saveNotesToStorage(remaining);
-  };
-
-  // Wipe Trash completely empty
-  const handleWipeTrash = async () => {
-    const saved = notes.filter(n => !n.isTrashed);
-    await saveNotesToStorage(saved);
-    setIsConfirmingWipeTrash(false);
-  };
-
-  // Live Whiteboard Sketch loader for existing drawings
-  const handleEditDrawingOnNote = (noteToEdit: Note) => {
-    // Open the note editing modal but flag the whiteboard directly!
-    // Simply set activeNote and the editor component will boot with whiteboard open.
-    setActiveEditingNote(noteToEdit);
-  };
-
-  // ----------------------------------------------------
-  // LABEL LABELS CRUD ACTIONS
-  // ----------------------------------------------------
-  const handleAddLabel = async (name: string) => {
-    const newLbl: Label = { id: `lbl-${generateId()}`, name };
-    const nextLabels = [...labels, newLbl];
-    await saveLabelsToStorage(nextLabels);
-  };
-
-  const handleUpdateLabel = async (id: string, name: string) => {
-    const nextLabels = labels.map(l => l.id === id ? { ...l, name } : l);
-    await saveLabelsToStorage(nextLabels);
-  };
-
-  const handleDeleteLabel = async (id: string) => {
-    // Remove label definition
-    const nextLabels = labels.filter(l => l.id !== id);
-    await saveLabelsToStorage(nextLabels);
-
-    // Clean label references in all notes
-    const nextNotes = notes.map(note => {
-      if (note.labels.includes(id)) {
-        return {
-          ...note,
-          labels: note.labels.filter(lblId => lblId !== id),
-          updatedAt: Date.now()
-        };
-      }
-      return note;
-    });
-    await saveNotesToStorage(nextNotes);
-
-    // If active section is this label, fall back to notes
-    if (currentSection === id) {
-      setCurrentSection('notes');
+        if (timerMaxSeconds > 0) {
+          setSecondsRemaining(prev => {
+            if (prev <= 1) {
+              setIsTimerActive(false);
+              handleTriggerStop(); // Times up - STOP!
+              return 0;
+            }
+            return prev - 1;
+          });
+        }
+      }, 1000);
+    } else {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     }
-  };
 
-  // ----------------------------------------------------
-  // FILTERING ENGINE OF NOTES
-  // ----------------------------------------------------
-  const getFilteredNotes = () => {
-    return notes.filter((note) => {
-      // Match query first
-      const matchesQuery = 
-        note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        note.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        note.checklistItems.some(item => item.text.toLowerCase().includes(searchQuery.toLowerCase()));
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+  }, [isTimerActive, timerMaxSeconds]);
 
-      if (!matchesQuery) return false;
+  // AI Opponent Simulated live typing timeline effect
+  useEffect(() => {
+    const activeRound = gameState.currentRound;
 
-      // Section sorting
-      if (currentSection === 'notes') {
-        return !note.isTrashed;
-      }
-      if (currentSection === 'trash') {
-        return note.isTrashed;
-      }
-      // Section is actually a Label ID (excludes trashed notes)
-      return !note.isTrashed && note.labels.includes(currentSection);
-    });
-  };
+    if (activeRound.status === 'playing') {
+      // Reset hints too
+      setHints({
+        boy: { word: '', loading: false },
+        girl: { word: '', loading: false },
+        animal: { word: '', loading: false },
+        plant: { word: '', loading: false },
+        inanimate: { word: '', loading: false },
+        country: { word: '', loading: false },
+        food: { word: '', loading: false }
+      });
 
-  const filteredList = getFilteredNotes();
+      // Reset internal simulation states
+      setOpponentProgress({
+        boy: 'idle', girl: 'idle', animal: 'idle', plant: 'idle', inanimate: 'idle', country: 'idle', food: 'idle'
+      });
+      setOpponentAnswers({
+        boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: ''
+      });
+      setDynamicPlaceholders({
+        boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: ''
+      });
 
-  // Split Main Notes into Pinned vs Others for visual Keep hierarchy
-  const pinnedNotes = filteredList.filter(n => n.isPinned);
-  const unpinnedNotes = filteredList.filter(n => !n.isPinned);
+      // Call express API to get placeholders and opponent target plays
+      const setupOpponentGameInfo = async () => {
+        try {
+          const res = await fetch('/api/opponent-and-placeholders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ letter: activeRound.letter, difficulty: selectedDifficulty })
+          });
+          const data = await res.json();
 
-  // Core stats counters for sidebar badges
-  const totalNotesCount = notes.filter(n => !n.isTrashed).length;
-  const totalTrashCount = notes.filter(n => n.isTrashed).length;
-  const getNotesCountForLabel = (lblId: string) => notes.filter(n => !n.isTrashed && n.labels.includes(lblId)).length;
+          if (data.dynamicPlaceholders) {
+            setDynamicPlaceholders(data.dynamicPlaceholders);
+          }
 
-  // Active section metadata display title
-  const getActiveSectionTitle = () => {
-    if (currentSection === 'notes') return isAr ? 'الملاحظات' : 'Notes';
-    if (currentSection === 'trash') return isAr ? 'سلة المهملات' : 'Trash';
-    const activeLabel = labels.find(l => l.id === currentSection);
-    return activeLabel ? activeLabel.name : '';
-  };
+          const targetAnswers = data.opponentAnswers || {};
 
-  const getFontFamilyClass = () => {
-    switch (fontFamily) {
-      case 'cairo': return 'font-cairo';
-      case 'tajawal': return 'font-tajawal';
-      case 'elmessiri': return 'font-elmessiri';
-      case 'almarai': return 'font-almarai';
-      case 'inter': return 'font-inter';
-      case 'mono-jb': return 'font-mono-jb';
-      default: return 'font-cairo';
+          // Filter out categories that are kept empty based on selected difficulty target logic
+          const categoriesToFill = CATEGORIES.filter(cat => targetAnswers[cat.key] && targetAnswers[cat.key].trim() !== '')
+            .map(cat => cat.key);
+
+          let currentIdx = 0;
+          let typingStage: 'typing' | 'done' = 'typing';
+
+          // Typing speeds depend strongly on selected AI opponent difficulty
+          const speedStep = selectedDifficulty === 'hard' ? 1200 : selectedDifficulty === 'medium' ? 2400 : 4500;
+
+          opponentTimerRef.current = setInterval(() => {
+            if (currentIdx >= categoriesToFill.length) {
+              if (opponentTimerRef.current) clearInterval(opponentTimerRef.current);
+              return;
+            }
+
+            const targetCategory = categoriesToFill[currentIdx];
+
+            if (typingStage === 'typing') {
+              setOpponentProgress(prev => ({ ...prev, [targetCategory]: 'typing' }));
+              typingStage = 'done';
+            } else {
+              setOpponentProgress(prev => ({ ...prev, [targetCategory]: 'done' }));
+              setOpponentAnswers(prev => ({ ...prev, [targetCategory]: targetAnswers[targetCategory] }));
+              typingStage = 'typing';
+              currentIdx++;
+            }
+          }, speedStep);
+
+        } catch (err) {
+          console.error("Failed to fetch opponent configuration", err);
+        }
+      };
+
+      setupOpponentGameInfo();
+
+    } else {
+      if (opponentTimerRef.current) clearInterval(opponentTimerRef.current);
     }
-  };
 
-  const getFontSizeClass = () => {
-    switch (fontSize) {
-      case 'sm': return 'font-size-sm';
-      case 'base': return 'font-size-base';
-      case 'lg': return 'font-size-lg';
-      case 'xl': return 'font-size-xl';
-      default: return 'font-size-base';
+    return () => {
+      if (opponentTimerRef.current) clearInterval(opponentTimerRef.current);
+    };
+  }, [gameState.currentRound.status, gameState.currentRound.letter, selectedDifficulty]);
+
+  // Loading carousel loop
+  useEffect(() => {
+    if (gameState.currentRound.status === 'submitting') {
+      setLoadingMsgIdx(0);
+      loadingIntervalRef.current = setInterval(() => {
+        setLoadingMsgIdx(prev => (prev + 1) % loadingMessages.length);
+      }, 2500);
+    } else {
+      if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
     }
+    return () => {
+      if (loadingIntervalRef.current) clearInterval(loadingIntervalRef.current);
+    };
+  }, [gameState.currentRound.status]);
+
+  // Actions
+  const toggleMute = () => {
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    setMuteState(nextMuted);
+    localStorage.setItem('stop_game_muted', nextMuted ? 'true' : 'false');
   };
 
-  const handleKeypadPress = (val: string) => {
-    setLockError(false);
-    if (enteredPIN.length < 4) {
-      const nextPIN = enteredPIN + val;
-      setEnteredPIN(nextPIN);
-      if (nextPIN.length === 4) {
-        if (nextPIN === appLockPIN) {
-          setIsAppLocked(false);
-          setEnteredPIN('');
-        } else {
-          setLockError(true);
-          setEnteredPIN('');
+  const startSetup = () => {
+    setGameState(prev => ({
+      ...prev,
+      currentRound: {
+        letter: '',
+        answers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        opponentAnswers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        opponentProgress: { boy: 'idle', girl: 'idle', animal: 'idle', plant: 'idle', inanimate: 'idle', country: 'idle', food: 'idle' },
+        dynamicPlaceholders: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        difficulty: selectedDifficulty,
+        durationSeconds: 0,
+        status: 'spinning'
+      }
+    }));
+  };
+
+  const handleLetterSelected = (letter: string) => {
+    setSecondsRemaining(timerMaxSeconds);
+    setActualTimeElapsed(0);
+    setGameState(prev => ({
+      ...prev,
+      currentRound: {
+        ...prev.currentRound,
+        letter,
+        status: 'playing'
+      }
+    }));
+    setIsTimerActive(true);
+  };
+
+  const handleAnswerChange = (category: CategoryKey, value: string) => {
+    setGameState(prev => ({
+      ...prev,
+      currentRound: {
+        ...prev.currentRound,
+        answers: {
+          ...prev.currentRound.answers,
+          [category]: value
         }
       }
+    }));
+  };
+
+  // Fetch word suggest hint from express server
+  const handleRequestHint = async (category: CategoryKey) => {
+    if (hints[category].loading || hints[category].word) return;
+
+    if (userPoints < HINT_COST_POINTS) {
+      setHintErrorCategory(prev => ({
+        ...prev,
+        [category]: `تحتاج إلى ${HINT_COST_POINTS} نقاط! فُز في الجولات لكسب النقاط ⭐️`
+      }));
+      playWrongSound();
+      setTimeout(() => {
+        setHintErrorCategory(prev => ({
+          ...prev,
+          [category]: null
+        }));
+      }, 4000);
+      return;
+    }
+
+    // Deduct coins/points
+    const nextPoints = userPoints - HINT_COST_POINTS;
+    setUserPoints(nextPoints);
+    localStorage.setItem('stop_game_user_points', nextPoints.toString());
+
+    setHints(prev => ({
+      ...prev,
+      [category]: { ...prev[category], loading: true }
+    }));
+
+    try {
+      const res = await fetch('/api/hint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ letter: gameState.currentRound.letter, category })
+      });
+      const data = await res.json();
+      
+      // Clean word in case it has prefix words
+      const cleanedHintWord = (data.hint || 'لا توجد فكرة صالحة مسبقاً')
+        .replace(/^(مثل|مثال|مثال ذلك|مثلاً)\s*[:\-]?\s*/, '')
+        .trim();
+
+      setHints(prev => ({
+        ...prev,
+        [category]: { word: cleanedHintWord, loading: false }
+      }));
+      playSuccessSound();
+    } catch (err) {
+      console.error(err);
+      setHints(prev => ({
+        ...prev,
+        [category]: { word: 'تلميح محلي البدء بحرف ' + gameState.currentRound.letter, loading: false }
+      }));
     }
   };
 
-  const handleKeypadDelete = () => {
-    setEnteredPIN(prev => prev.slice(0, prev.length - 1));
+  // Submit and grade with parallel referee judging for both Player and Opposition
+  const handleTriggerStop = async () => {
+    if (multiplayerMode) {
+      handleMultiplayerSubmit(true);
+      return;
+    }
+
+    setIsTimerActive(false);
+    if (opponentTimerRef.current) clearInterval(opponentTimerRef.current);
+
+    setGameState(prev => ({
+      ...prev,
+      currentRound: {
+        ...prev.currentRound,
+        status: 'submitting'
+      }
+    }));
+
+    const roundData = gameState.currentRound;
+    
+    try {
+      // Parallel grading of both Player and AI Opponent outputs
+      const [playerRes, opponentRes] = await Promise.all([
+        fetch('/api/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ letter: roundData.letter, answers: roundData.answers })
+        }).then(r => r.json()),
+
+        fetch('/api/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ letter: roundData.letter, answers: opponentAnswers })
+        }).then(r => r.json())
+      ]);
+
+      // Compile completed round information
+      const completedRound: Round = {
+        id: generateId(),
+        letter: roundData.letter,
+        answers: roundData.answers,
+        opponentAnswers: opponentAnswers,
+        results: playerRes.results,
+        opponentResults: opponentRes.results,
+        overallVerdict: playerRes.overallVerdict,
+        totalScore: playerRes.totalScore,
+        opponentTotalScore: opponentRes.totalScore,
+        durationSeconds: actualTimeElapsed,
+        createdAt: Date.now()
+      };
+
+      // Play victory sound or default feedback and calculate earned points
+      const pScore = completedRound.totalScore || 0;
+      const oScore = completedRound.opponentTotalScore || 0;
+      const isWinner = pScore > oScore;
+      const isTiePlayer = pScore === oScore;
+
+      let earnedPoints = 0;
+      if (isWinner) {
+        earnedPoints = 50;
+        playSuccessSound();
+      } else if (isTiePlayer && pScore > 0) {
+        earnedPoints = 15;
+        playSuccessSound();
+      } else {
+        playWrongSound();
+      }
+
+      let nextPoints = userPoints;
+      if (earnedPoints > 0) {
+        nextPoints = userPoints + earnedPoints;
+        setUserPoints(nextPoints);
+        localStorage.setItem('stop_game_user_points', nextPoints.toString());
+      }
+
+      const updatedHistory = [completedRound, ...gameState.roundsHistory];
+      localStorage.setItem('stop_game_history', JSON.stringify(updatedHistory));
+
+      // Badges check & notification trigger
+      try {
+        const hintsUsed = Object.values(hints).filter(h => h.word && h.word.length > 0).length;
+        const newlyUnlocked = checkAndUnlockBadges(
+          updatedHistory,
+          nextPoints,
+          unlockedBadges,
+          {
+            totalScore: pScore,
+            timerRemaining: secondsRemaining,
+            hintsUsed,
+            didWin: isWinner
+          }
+        );
+        if (newlyUnlocked.length > 0) {
+          const merged = [...unlockedBadges, ...newlyUnlocked];
+          setUnlockedBadges(merged);
+          localStorage.setItem('stop_game_unlocked_badges', JSON.stringify(merged));
+          newlyUnlocked.forEach(badgeId => {
+            const bConf = BADGES_CONFIG.find(bc => bc.id === badgeId);
+            if (bConf) {
+              triggerBadgeToast(bConf);
+            }
+          });
+        }
+      } catch (be) {
+        console.error("Badges check failed:", be);
+      }
+
+      setGameState(prev => ({
+        ...prev,
+        roundsHistory: updatedHistory,
+        currentRound: {
+          ...prev.currentRound,
+          status: 'reviewing'
+        }
+      }));
+
+    } catch (err) {
+      console.error("Grading failed completely:", err);
+      // Fail gracefully back to beginning setup
+      setGameState(prev => ({
+        ...prev,
+        currentRound: {
+          ...prev.currentRound,
+          status: 'idle'
+        }
+      }));
+    }
   };
 
-  if (isAppLocked) {
-    return (
-      <div 
-        className="fixed inset-0 bg-zinc-950 text-white z-[9999] flex flex-col items-center justify-center p-6 select-none"
-        dir={isAr ? 'rtl' : 'ltr'}
-      >
-        <div className="max-w-xs w-full space-y-8 text-center animate-in fade-in duration-300">
-          
-          {/* Logo Or Badge */}
-          <div className="flex flex-col items-center space-y-3">
-            <div className="p-4 bg-amber-500/10 rounded-full border border-amber-500/20 text-amber-500 animate-pulse">
-              <ShieldAlert className="h-10 w-10" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black tracking-tight">{isAr ? 'خزانة المذكرات الآمنة' : 'Secure Keep Vault'}</h2>
-              <p className="text-[11px] text-zinc-500 mt-1 uppercase font-mono tracking-widest font-black">
-                {isAr ? 'معيار الحماية محلي بالكامل' : 'Local Sandbox Security Mode'}
-              </p>
-            </div>
-          </div>
+  const handleRestart = () => {
+    setGameState(prev => ({
+      ...prev,
+      currentRound: {
+        letter: '',
+        answers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        opponentAnswers: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        opponentProgress: { boy: 'idle', girl: 'idle', animal: 'idle', plant: 'idle', inanimate: 'idle', country: 'idle', food: 'idle' },
+        dynamicPlaceholders: { boy: '', girl: '', animal: '', plant: '', inanimate: '', country: '', food: '' },
+        difficulty: selectedDifficulty,
+        durationSeconds: 0,
+        status: 'idle'
+      }
+    }));
+  };
 
-          {/* Dots Indicator */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-center gap-3.5 h-6">
-              {[0, 1, 2, 3].map(idx => {
-                const filled = enteredPIN.length > idx;
-                return (
-                  <div 
-                    key={idx}
-                    className={`h-3 w-3 rounded-full transition-all duration-150 ${
-                      filled ? 'bg-amber-500 scale-125 shadow-md shadow-amber-500/50' : 'bg-zinc-800 border border-zinc-700'
-                    }`}
-                  />
-                );
-              })}
-            </div>
-            {lockError && (
-              <span className="text-xs text-rose-500 font-bold block animate-pulse">
-                {isAr ? 'رمز قفل غير صحيح! حاول مجدداً.' : 'Incorrect PIN! Try again.'}
-              </span>
-            )}
-          </div>
+  const handleClearHistory = () => {
+    localStorage.removeItem('stop_game_history');
+    setGameState(prev => ({
+      ...prev,
+      roundsHistory: []
+    }));
+  };
 
-          {/* Custom keypad */}
-          <div className="grid grid-cols-3 gap-3">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
-              <button
-                key={num}
-                type="button"
-                onClick={() => handleKeypadPress(num.toString())}
-                className="py-3.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-900 rounded-2xl text-lg font-black transition-all active:scale-95 cursor-pointer text-white"
-              >
-                {num}
-              </button>
-            ))}
-            
-            <button
-              type="button"
-              onClick={() => { setEnteredPIN(''); setLockError(false); }}
-              className="py-3.5 bg-zinc-950 border border-transparent rounded-2xl text-[11px] font-black hover:text-rose-500 transition-colors uppercase cursor-pointer text-zinc-400"
-            >
-              {isAr ? 'مسح' : 'Clear'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleKeypadPress('0')}
-              className="py-3.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-900 rounded-2xl text-lg font-black transition-all active:scale-95 cursor-pointer text-white"
-            >
-              0
-            </button>
-
-            <button
-              type="button"
-              onClick={handleKeypadDelete}
-              className="py-3.5 bg-zinc-950 border border-transparent rounded-2xl text-xs font-black hover:text-amber-500 transition-colors cursor-pointer text-zinc-400"
-            >
-              ←
-            </button>
-          </div>
-
-          <p className="text-[10px] text-zinc-500 leading-relaxed pt-4 border-t border-zinc-900">
-            {isAr 
-              ? 'يرجى إدخال رمز الـ PIN السري الخاص بك لإلغاء القفل. التثبيت محلي آمن لحماية سرية الملاحظات.' 
-              : 'Enter your custom 4-digit passcode PIN to proceed. If you forgot the combination, clear browser site cache.'}
-          </p>
-
-        </div>
-      </div>
-    );
-  }
+  const activeRound = gameState.currentRound;
+  const isFilledCount = (Object.values(activeRound.answers) as string[]).filter(v => v.trim().length > 0).length;
 
   return (
-    <div className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col selection:bg-yellow-420 selection:text-black ${getFontFamilyClass()} ${getFontSizeClass()}`}>
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-900 dark:text-zinc-100 flex flex-col transition-colors duration-200">
       
-      {/* -------------------- MAIN TOP HEADER NAVBAR -------------------- */}
-      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 h-16 px-4 py-2 flex items-center justify-between sticky top-0 z-40 shadow-xs">
-        
-        {/* Brand Details */}
+      {/* ----------------- TOP NAVBAR HEADER ----------------- */}
+      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 h-16 px-4 md:px-8 flex items-center justify-between sticky top-0 z-40 shadow-xs" dir="rtl">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-amber-500 rounded-xl flex items-center justify-center text-white font-extrabold shadow-md shadow-amber-500/20">
-            <NotebookPen className="h-5.5 w-5.5 text-amber-50" />
+          <div className="h-10 w-10 bg-amber-500 rounded-2xl flex items-center justify-center text-white font-extrabold shadow-md shadow-amber-500/25">
+            <Trophy className="h-5.5 w-5.5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[9px] uppercase font-mono bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-bold px-1.5 py-0.5 rounded border border-amber-200/50 leading-none">
-                {isAr ? 'ملاحظات كيب' : 'Keep Notebook'}
+              <span className="text-[9px] uppercase font-mono bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-bold px-1.5 py-0.5 rounded border border-amber-200/40 select-none">
+                تحدي الخبراء والذكاء
               </span>
             </div>
             <h1 className="font-extrabold text-zinc-900 dark:text-white text-sm sm:text-base tracking-tight mt-0.5">
-              {isAr ? 'محرر المذكرات الذكي' : 'Smart Note Organizer'}
+              لعبة جماد حيوان نبات ضد الذكاء الاصطناعي 🦁🤖
             </h1>
           </div>
         </div>
 
-        {/* Global Instant Search input (In context filtering) */}
-        <div className="hidden sm:flex items-center gap-2 bg-zinc-100 dark:bg-zinc-950/80 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 w-full max-w-md mx-6 transition-colors focus-within:border-amber-500/55">
-          <Search className="h-4.5 w-4.5 text-zinc-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={isAr ? 'البحث عن ملاحظة...' : 'Search through notes...'}
-            className="w-full text-xs font-semibold focus:outline-hidden bg-transparent py-0.5"
-            dir={isAr ? 'rtl' : 'ltr'}
-          />
-          {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery('')}
-              className="text-zinc-400 hover:text-zinc-650 text-xs font-bold leading-none"
-            >
-              ×
-            </button>
-          )}
-        </div>
-
-        {/* Global Right Actions (Layout switch, Settings, Clock) */}
+        {/* Global actions: Audio, Rules, Points */}
         <div className="flex items-center gap-2">
-          
-          {/* Settings button in the old place of New Note */}
+          {/* Points Wallet */}
+          <div className="flex items-center gap-1 bg-amber-500/10 dark:bg-amber-550/15 border border-amber-500/20 px-3 py-1.5 rounded-xl text-xs font-black text-amber-700 dark:text-amber-400 select-none">
+            <span>رصيدك:</span>
+            <span className="font-mono text-xs font-black bg-amber-500/20 px-1.5 rounded-md text-amber-600 dark:text-amber-300">🪙 {userPoints}</span>
+          </div>
+
+          {isApiKeyActive !== null && (
+            <div 
+              className={`hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border ${
+                isApiKeyActive 
+                  ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/15'
+                  : 'bg-zinc-500/10 text-zinc-500 border-zinc-200 dark:border-zinc-800'
+              }`}
+            >
+              <div className={`h-2 w-2 rounded-full ${isApiKeyActive ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
+              <span>{isApiKeyActive ? "الذكاء الاصطناعي نشط" : "تقييم محلي كلاسيكي"}</span>
+            </div>
+          )}
+
           <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="bg-amber-500 hover:bg-amber-400 text-white rounded-xl py-2 px-3.5 shadow-md flex items-center gap-1.5 text-xs font-extrabold transition-all hover:scale-[1.02] active:scale-95 cursor-pointer shadow-amber-500/10"
-            title={isAr ? 'الإعدادات واللغة' : 'Settings & Language'}
+            onClick={toggleMute}
+            className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-all cursor-pointer text-zinc-650 dark:text-zinc-200"
+            title={isMuted ? 'تشغيل المؤثرات الصوتية' : 'كتم كلي للصوت'}
           >
-            <Settings className="h-4 w-4 stroke-[2.5]" />
-            <span>{isAr ? 'الإعدادات' : 'Settings'}</span>
+            {isMuted ? <VolumeX className="h-4.5 w-4.5" /> : <Volume2 className="h-4.5 w-4.5" />}
           </button>
 
+          <button
+            onClick={() => setIsRulesOpen(true)}
+            className="p-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl transition-all cursor-pointer text-zinc-650 dark:text-zinc-200 font-black flex items-center gap-1 text-xs"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span className="hidden md:inline">قواعد اللعب</span>
+          </button>
         </div>
-
       </header>
 
-      {/* Mobile search bar visible on xs devices */}
-      <div className="flex sm:hidden p-3 bg-zinc-100 border-b border-zinc-200 dark:bg-zinc-950 dark:border-zinc-805 justify-center">
-        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 w-full">
-          <Search className="h-4 w-4 text-zinc-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={isAr ? 'البحث عن ملاحظة...' : 'Search through notes...'}
-            className="w-full text-xs font-semibold focus:outline-hidden bg-transparent"
-            dir={isAr ? 'rtl' : 'ltr'}
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-zinc-400 hover:text-zinc-650">×</button>
-          )}
-        </div>
-      </div>
+      {/* ---------------- centrale viewport board ----------------- */}
+      <main className="flex-1 max-w-4xl w-full mx-auto p-4 md:p-8 flex flex-col justify-center">
 
-      {/* -------------------- WORKSPACE SIDEBAR + CENTRAL BOARD -------------------- */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative" dir={isAr ? 'rtl' : 'ltr'}>
-        
-        {/* Left/Right Sidebar Menu (Sticky responsive) */}
-        <aside className="bg-white dark:bg-zinc-900 md:w-64 border-zinc-200 dark:border-zinc-850 border-r md:h-full shrink-0 p-3 flex md:flex-col overflow-x-auto md:overflow-x-visible z-20 scrollbar-none gap-1 sm:gap-1.5 shrink-0">
+        <AnimatePresence mode="wait">
           
-          <div className="hidden md:block py-2 px-2.5 mb-1.5">
-            <span className="text-[10px] uppercase font-mono text-zinc-400 dark:text-zinc-500 tracking-widest font-extrabold">
-              {isAr ? 'أدوات التنظيم' : 'ORGANIZATION TOOLS'}
-            </span>
-          </div>
+          {/* STATE 1: IDLE / SETTINGS */}
+          {activeRound.status === 'idle' && (
+            <motion.div
+              key="setup"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              className="space-y-6"
+              dir="rtl"
+            >
+              {/* Feature Hero banner */}
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 md:p-8 shadow-xl text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-44 h-44 bg-amber-500/10 rounded-full blur-3xl" />
+                <div className="absolute bottom-0 left-0 w-36 h-36 bg-emerald-500/10 rounded-full blur-3xl" />
 
-          {/* Switch: Notes */}
-          <button
-            onClick={() => setCurrentSection('notes')}
-            className={`flex items-center gap-3 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-              currentSection === 'notes'
-                ? 'bg-amber-500/10 dark:bg-amber-500/5 text-amber-650 dark:text-amber-450 border border-amber-500/20 shadow-xs'
-                : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-850 hover:text-zinc-800 dark:hover:text-zinc-200 border border-transparent'
-            }`}
-          >
-            <Lightbulb className="h-4.5 w-4.5" />
-            <div className="flex-1 flex items-center justify-between gap-2">
-              <span>{isAr ? 'الملاحظات' : 'My Notes'}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-bold font-mono">
-                {totalNotesCount}
-              </span>
-            </div>
-          </button>
-
-          {/* Switch: Labels Editor */}
-          <button
-            onClick={() => setIsLabelManagerOpen(true)}
-            className="flex items-center gap-3 py-2.5 px-4 rounded-xl text-xs font-bold text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-850 hover:text-zinc-800 dark:hover:text-zinc-200 transition-all cursor-pointer border border-transparent shrink-0"
-          >
-            <FolderEdit className="h-4.5 w-4.5" />
-            <span>{isAr ? 'إدارة التصنيفات' : 'Edit Labels'}</span>
-          </button>
-
-          {/* DYNAMIC LABELS CHIPS LIST BAR */}
-          {labels.length > 0 && (
-            <div className="flex md:flex-col gap-1 sm:gap-1.5 md:my-1.5 md:pt-1.5 md:border-t border-zinc-150 dark:border-zinc-850">
-              {labels.map((lbl) => (
-                <button
-                  key={lbl.id}
-                  onClick={() => setCurrentSection(lbl.id)}
-                  className={`flex items-center gap-2.5 py-2 px-3.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 ${
-                    currentSection === lbl.id
-                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white border border-zinc-250 dark:border-zinc-700 shadow-xs'
-                      : 'text-zinc-500 hover:bg-zinc-50/70 dark:hover:bg-zinc-850/60 hover:text-zinc-800 dark:hover:text-zinc-300 border border-transparent'
-                  }`}
-                >
-                  <TagIcon className="h-4 w-4 rotate-90" />
-                  <div className="flex-1 flex items-center justify-between min-w-0">
-                    <span className="truncate max-w-28 sm:max-w-none">{lbl.name}</span>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-200/40 dark:bg-zinc-850 text-zinc-500 font-bold font-mono ml-2">
-                      {getNotesCountForLabel(lbl.id)}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Separation list */}
-          <div className="hidden md:block w-full h-px bg-zinc-150 dark:bg-zinc-850 my-2" />
-
-          {/* Switch: Trash */}
-          <button
-            onClick={() => setCurrentSection('trash')}
-            className={`flex items-center gap-3 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-              currentSection === 'trash'
-                ? 'bg-amber-500/10 dark:bg-amber-500/5 text-amber-650 dark:text-amber-450 border border-amber-500/20 shadow-xs'
-                : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-850 hover:text-zinc-800 dark:hover:text-zinc-200 border border-transparent'
-            }`}
-          >
-            <Trash2 className="h-4.5 w-4.5" />
-            <div className="flex-1 flex items-center justify-between gap-2">
-              <span>{isAr ? 'المهملات' : 'Trash bin'}</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold font-mono ${
-                totalTrashCount > 0 
-                  ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400' 
-                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-650'
-              }`}>
-                {totalTrashCount}
-              </span>
-            </div>
-          </button>
-
-        </aside>
-
-        {/* Primary Scrollable Board View */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-5">
-          
-          {/* Header Section Title (And Empty Trash option if in Trash) */}
-          <div className="mb-5 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-4 bg-amber-500 rounded-full" />
-              <h2 className="text-lg font-black text-zinc-900 dark:text-white capitalize">
-                {getActiveSectionTitle()}
-              </h2>
-              {searchQuery && (
-                <span className="text-[11px] bg-zinc-200/60 dark:bg-zinc-800/60 text-zinc-500 font-bold px-2.5 py-0.5 rounded-full">
-                  {isAr ? `نتائج البحث عن: "${searchQuery}"` : `search: "${searchQuery}"`}
-                </span>
-              )}
-            </div>
-
-            {currentSection === 'trash' && filteredList.length > 0 && (
-              <button
-                onClick={() => {
-                  if (isConfirmingWipeTrash) {
-                    handleWipeTrash();
-                  } else {
-                    setIsConfirmingWipeTrash(true);
-                  }
-                }}
-                onMouseLeave={() => setIsConfirmingWipeTrash(false)}
-                className={`py-1.5 px-3 rounded-lg border text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all ${
-                  isConfirmingWipeTrash
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white border-transparent'
-                    : 'border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-450 hover:bg-rose-50 dark:hover:bg-rose-955/20'
-                }`}
-                title={isAr ? 'إفراغ جميع محتويات سلة المهملات نهائياً' : 'Empty Trash completely'}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>
-                  {isConfirmingWipeTrash
-                    ? (isAr ? 'تأكيد إفراغ سلة المهملات؟' : 'Confirm Empty Trash?')
-                    : (isAr ? 'إفراغ سلة المهملات' : 'Empty Trash')}
-                </span>
-              </button>
-            )}
-          </div>
-
-          {/* -------------------- INLINE EXPANDABLE WRITER -------------------- */}
-          {currentSection === 'notes' && !searchQuery && (
-            <div className="mb-6">
-              <NoteEditor
-                labels={labels}
-                onSave={handleSaveNote}
-                onCancel={() => {}}
-                isAr={isAr}
-                isModal={false}
-              />
-            </div>
-          )}
-
-          {/* -------------------- FILTERED NOTES CARD WALLS -------------------- */}
-          {filteredList.length === 0 ? (
-            
-            /* EMPTY VIEW ILLUSTRATOR */
-            <div className="flex flex-col items-center justify-center py-20 text-center text-zinc-400 dark:text-zinc-600 px-4">
-              <div className="p-4 bg-zinc-100 dark:bg-zinc-900 rounded-2xl mb-3 border border-zinc-200/50 dark:border-zinc-800/50">
-                {currentSection === 'trash' ? (
-                  <Trash2 className="h-12 w-12 text-zinc-300 dark:text-zinc-700 stroke-1" />
-                ) : (
-                  <Lightbulb className="h-12 w-12 text-zinc-300 dark:text-zinc-700 stroke-1" />
-                )}
-              </div>
-              <h3 className="font-extrabold text-sm text-zinc-700 dark:text-zinc-300">
-                {currentSection === 'trash'
-                  ? (isAr ? 'سلة المهملات فارغة' : 'No notes in trash')
-                  : (isAr ? 'ابدأ بتدوين ملاحظاتك الأولى!' : 'No matching notes found')}
-              </h3>
-              <p className="text-[11px] opacity-75 max-w-sm mt-1 leading-relaxed">
-                {currentSection === 'trash'
-                  ? (isAr ? 'عند حذف ملاحظة، سوف تُنقل هنا ويمكنك استعادتها لاحقاً.' : 'Notes you delete will appear here and can be restored.')
-                  : (isAr ? 'اضغط على زر ملاحظة جديدة لتدوين أفكارك ورسم الرسومات وحفظ الصور.' : 'Click "New Note" to easily capture checklist plans, hand sketches, and photos.')}
-              </p>
-            </div>
-
-          ) : (
-            
-            /* CHIP FEED SEPARATORS (PINNED VS OTHERS) */
-            <div className="space-y-6">
-              
-              {/* Pinned notes list */}
-              {pinnedNotes.length > 0 && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-550">
-                    <Pin className="h-3 w-3 rotate-45" />
-                    <span>{isAr ? 'الملاحظات المثبتة' : 'PINNED NOTES'}</span>
+                <div className="relative z-10 flex flex-col items-center">
+                  <div className="p-4 bg-amber-500 text-white rounded-3xl mb-4 shadow-xl shadow-amber-500/20">
+                    <Sparkles className="h-8 w-8 text-white-505" />
                   </div>
                   
-                  <div className={
-                    viewLayout === 'grid'
-                      ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-                      : "max-w-xl mx-auto flex flex-col gap-4"
-                  }>
-                    {pinnedNotes.map((note) => (
-                      <NoteCard
-                        key={note.id}
-                        note={note}
-                        labels={labels}
-                        onSelect={setActiveEditingNote}
-                        onUpdateNote={handleUpdateNoteField}
-                        onDeleteNote={handlePermanentDeleteNote}
-                        onRestoreNote={handleRestoreNote}
-                        isAr={isAr}
-                        onEditDrawing={handleEditDrawingOnNote}
-                        notesPassword={notesPassword}
-                      />
-                    ))}
-                  </div>
+                  <h2 className="text-2xl md:text-3xl font-black text-zinc-900 dark:text-white">تحدي جماد حيوان نبات ضد جيميناي! 🤖🧬</h2>
+                  <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-350 max-w-xl mt-2 leading-relaxed font-semibold">
+                    الآن بنظام الخصوم التفاعلي والحلول الإرشادية الفورية. اختر مستوى ذكاء خصمك الآلي، واحصل على تلميحات ذكية أثناء اللعب لمنافسة الخصم وهزيمته بضربة القاضية!
+                  </p>
                 </div>
-              )}
-
-              {/* Unpinned notes list (Others) */}
-              {unpinnedNotes.length > 0 && (
-                <div className="space-y-2.5">
-                  {pinnedNotes.length > 0 && (
-                    <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-550">
-                      <span>{isAr ? 'الأشكال والملاحظات الأخرى' : 'OTHERS'}</span>
-                    </div>
-                  )}
-
-                  <div className={
-                    viewLayout === 'grid'
-                      ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-                      : "max-w-xl mx-auto flex flex-col gap-4"
-                  }>
-                    {unpinnedNotes.map((note) => (
-                      <NoteCard
-                        key={note.id}
-                        note={note}
-                        labels={labels}
-                        onSelect={setActiveEditingNote}
-                        onUpdateNote={handleUpdateNoteField}
-                        onDeleteNote={handlePermanentDeleteNote}
-                        onRestoreNote={handleRestoreNote}
-                        isAr={isAr}
-                        onEditDrawing={handleEditDrawingOnNote}
-                        notesPassword={notesPassword}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-            </div>
-          )}
-
-        </main>
-
-      </div>
-
-      {/* -------------------- DYNAMIC MODALS RENDERING VIEW -------------------- */}
-      <AnimatePresence>
-        
-        {/* MODAL 1: EDITING / EXPANDED ACTIVE NOTE OVERLAY */}
-        {activeEditingNote && (
-          <NoteEditor
-            note={activeEditingNote}
-            labels={labels}
-            onSave={handleSaveNote}
-            onCancel={() => setActiveEditingNote(null)}
-            isAr={isAr}
-            isModal={true}
-          />
-        )}
-
-        {/* MODAL 2: CREATION POPUP OVERLAY */}
-        {isNewEditorModalOpen && (
-          <NoteEditor
-            labels={labels}
-            onSave={handleSaveNote}
-            onCancel={() => {
-              setIsNewEditorModalOpen(false);
-              setNewEditorStartWithWhiteboard(false);
-              setNewEditorStartWithTable(false);
-            }}
-            isAr={isAr}
-            isModal={true}
-            startWithWhiteboard={newEditorStartWithWhiteboard}
-            startWithTable={newEditorStartWithTable}
-          />
-        )}
-
-        {/* MODAL 3: TAG CATEGORIES LABEL MANAGER OVERLAY */}
-        {isLabelManagerOpen && (
-          <LabelManager
-            labels={labels}
-            onAddLabel={handleAddLabel}
-            onUpdateLabel={handleUpdateLabel}
-            onDeleteLabel={handleDeleteLabel}
-            onClose={() => setIsLabelManagerOpen(false)}
-            isAr={isAr}
-          />
-        )}
-
-        {/* MODAL 4: SETTINGS OVERLAY */}
-        {isSettingsOpen && (
-          <SettingsModal
-            isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
-            isAr={isAr}
-            onToggleLanguage={handleToggleLanguage}
-            theme={theme}
-            onChangeTheme={setTheme}
-            fontFamily={fontFamily}
-            onChangeFontFamily={setFontFamily}
-            fontSize={fontSize}
-            onChangeFontSize={setFontSize}
-            viewLayout={viewLayout}
-            onChangeViewLayout={setViewLayout}
-            appLockEnabled={appLockEnabled}
-            onChangeAppLockEnabled={setAppLockEnabled}
-            appLockPIN={appLockPIN}
-            onChangeAppLockPIN={setAppLockPIN}
-            notesPassword={notesPassword}
-            onChangeNotesPassword={setNotesPassword}
-            autoDeleteDays={autoDeleteDays}
-            onChangeAutoDeleteDays={setAutoDeleteDays}
-            reminderAlertStyle={reminderAlertStyle}
-            onChangeReminderAlertStyle={setReminderAlertStyle}
-            isSyncConnected={isSyncConnected}
-            syncEmail={syncEmail}
-            lastSyncTime={lastSyncTime}
-            onConnectSync={handleConnectSync}
-            onDisconnectSync={handleDisconnectSync}
-            onTriggerSyncNow={handleTriggerSyncNow}
-            notes={notes}
-            setNotes={setNotes}
-            onClearAllNotes={handleWipeAllData}
-          />
-        )}
-
-      </AnimatePresence>
-
-      {/* FLOATING ACTION TRIGGER: NEW NOTE (Bottom Left) */}
-      <div className="fixed bottom-14 left-6 z-40 md:bottom-16 md:left-8" dir="ltr">
-        <div className="relative">
-          <button
-            onClick={() => setShowAddOptions(!showAddOptions)}
-            className="bg-amber-500 hover:bg-amber-400 text-white rounded-full p-4.5 shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer shadow-amber-500/40 hover:rotate-90 duration-200"
-            title={isAr ? 'ملاحظة جديدة' : 'New Note'}
-          >
-            <Plus className="h-6 w-6 stroke-[3.5]" />
-          </button>
-
-          {showAddOptions && (
-            <div 
-              className="absolute bottom-full mb-3 left-0 w-60 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl p-2 z-50 flex flex-col gap-1.5 animate-in slide-in-from-bottom-3 duration-150"
-              onMouseLeave={() => setShowAddOptions(false)}
-            >
-              <div className="px-2.5 py-1.5 border-b border-zinc-100 dark:border-zinc-800">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 dark:text-zinc-500 block">
-                  {isAr ? 'إضافة ملاحظة جديدة' : 'CREATE NEW NOTE'}
-                </span>
               </div>
 
-              {/* Option 1: Write text note */}
-              <button
-                onClick={() => {
-                  setNewEditorStartWithWhiteboard(false);
-                  setNewEditorStartWithTable(false);
-                  setIsNewEditorModalOpen(true);
-                  setShowAddOptions(false);
-                }}
-                className={`flex items-center gap-3 w-full p-2.5 text-xs font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 cursor-pointer transition-colors ${
-                  isAr ? 'text-right justify-end flex-row-reverse' : 'text-left'
-                }`}
-              >
-                <Type className="h-4.5 w-4.5 text-amber-500 shrink-0" />
-                <span>{isAr ? 'كتابة ملاحظة نصية' : 'Write text note'}</span>
-              </button>
+              {/* Preferences Settings Module */}
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xl">
+                <div className="flex items-center gap-2 mb-4 border-b border-zinc-100 dark:border-zinc-850 pb-3">
+                  <Sliders className="h-4.5 w-4.5 text-amber-500" />
+                  <h3 className="text-sm font-black text-zinc-900 dark:text-white">خيارات حدّ المؤقت</h3>
+                </div>
 
-              {/* Option 2: Drawing whiteboard */}
-              <button
-                onClick={() => {
-                  setNewEditorStartWithWhiteboard(true);
-                  setNewEditorStartWithTable(false);
-                  setIsNewEditorModalOpen(true);
-                  setShowAddOptions(false);
-                }}
-                className={`flex items-center gap-3 w-full p-2.5 text-xs font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 cursor-pointer transition-colors ${
-                  isAr ? 'text-right justify-end flex-row-reverse' : 'text-left'
-                }`}
-              >
-                <Paintbrush className="h-4.5 w-4.5 text-purple-500 shrink-0" />
-                <span>{isAr ? 'فتح لوحة الرسم' : 'Open drawing board'}</span>
-              </button>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {TIMER_PRESETS.map((p) => {
+                    const isSelected = timerMaxSeconds === p.value;
+                    return (
+                      <button
+                        key={p.value}
+                        onClick={() => {
+                          setTimerMaxSeconds(p.value);
+                          setSecondsRemaining(p.value);
+                          playTickSound();
+                        }}
+                        className={`py-3 px-4 rounded-2xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/15'
+                            : 'bg-zinc-55 hover:bg-zinc-100 dark:bg-zinc-950 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800 text-zinc-650'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-              {/* Option 3: Create Excel Table */}
-              <button
-                onClick={() => {
-                  setNewEditorStartWithTable(true);
-                  setNewEditorStartWithWhiteboard(false);
-                  setIsNewEditorModalOpen(true);
-                  setShowAddOptions(false);
-                }}
-                className={`flex items-center gap-3 w-full p-2.5 text-xs font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 cursor-pointer transition-colors ${
-                  isAr ? 'text-right justify-end flex-row-reverse' : 'text-left'
-                }`}
-              >
-                <LayoutGrid className="h-4.5 w-4.5 text-emerald-500 shrink-0" />
-                <span>{isAr ? 'عمل جدول' : 'Create table'}</span>
-              </button>
-            </div>
+              {/* AI Opponent Difficulty Selector */}
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-xl">
+                <div className="flex items-center gap-2 mb-4 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                  <Cpu className="h-4.5 w-4.5 text-amber-500" />
+                  <h3 className="text-sm font-black text-zinc-900 dark:text-white">صعوبة ذكاء الخصم الآلي 🤖</h3>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  {(['easy', 'medium', 'hard'] as const).map((diff) => {
+                    const isSelected = selectedDifficulty === diff;
+                    const labels = {
+                      easy: 'سهل 🐢 (3-4 فئات)',
+                      medium: 'متوسط 🦊 (5-6 فئات)',
+                      hard: 'صعب قوي 🦁 (كل الفئات!)'
+                    };
+                    return (
+                      <button
+                        key={diff}
+                        type="button"
+                        onClick={() => {
+                          setSelectedDifficulty(diff);
+                          playTickSound();
+                        }}
+                        className={`py-3.5 px-4 rounded-2xl text-[11px] font-black border transition-all active:scale-95 cursor-pointer text-center ${
+                          isSelected
+                            ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100 shadow-md'
+                            : 'bg-zinc-55 hover:bg-zinc-100 dark:bg-zinc-950 dark:hover:bg-zinc-800 border-zinc-200 dark:border-zinc-800 text-zinc-650'
+                        }`}
+                      >
+                        {labels[diff]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Start game trigger */}
+              <div className="flex justify-center pt-2">
+                <button
+                  onClick={startSetup}
+                  className="flex items-center gap-2.5 py-4 px-10 bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-base rounded-2xl shadow-xl shadow-amber-500/25 hover:shadow-amber-500/35 transition-all hover:scale-[1.02] active:scale-98 cursor-pointer"
+                >
+                  <Play className="h-5 w-5 fill-white" />
+                  <span>بدء الجولة المنافسة 🎮</span>
+                </button>
+              </div>
+
+              {/* Quick info advisory */}
+              <div className="bg-emerald-500/5 border border-emerald-500/15 p-4 rounded-2xl flex gap-3 text-xs text-emerald-600 dark:text-emerald-450 leading-relaxed max-w-2xl mx-auto items-start">
+                <Info className="h-4 w-4 stroke-[2.2] shrink-0 mt-0.5" />
+                <p>
+                  <strong>قواعد المواجهة:</strong> عند دوران روليت اختيار الحرف وبداية اللعب، سيقوم الخصم الآلي بمنافستك وتعبئة كلماته تدريجياً حسب مستوى ذكائه المختار! يمكنك الضغط على "تلميح 💡" إذا صعبت عليك كلمة لمعاونتك فورياً.
+                </p>
+              </div>
+            </motion.div>
           )}
-        </div>
-      </div>
 
-      {/* Cockpit systems footer stats */}
-      <footer className="bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-850 h-10 px-4 py-2 flex items-center justify-between text-[11px] text-zinc-405 dark:text-zinc-500 font-mono shrink-0">
-        <div>{isAr ? 'برنامج تنظيم الملاحظات والرسوم الكروكية © 2026' : 'Creative Notes & Sketches Suite © 2026'}</div>
-        <div className="hidden sm:flex items-center gap-2">
-          <span>{isAr ? 'عناصر الحفظ المباشر تلقائية:' : 'Local-first autosave:'}</span>
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="font-bold text-emerald-600 dark:text-emerald-400">ONLINE LOCAL persistence</span>
-        </div>
-      </footer>
+          {/* STATE 2: SPINNING FOR A LETTER */}
+          {activeRound.status === 'spinning' && (
+            <motion.div
+              key="letter-spin"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="max-w-md w-full mx-auto"
+            >
+              <div className="mb-4">
+                <button
+                  onClick={handleRestart}
+                  className="text-xs text-zinc-400 hover:text-zinc-650 flex items-center gap-1 cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span>العودة للشاشة الرئيسية</span>
+                </button>
+              </div>
+
+              <LetterSelector onLetterSelected={handleLetterSelected} />
+            </motion.div>
+          )}
+
+          {/* STATE 3: PLAYING (TYPING UNDER PRESSURE) */}
+          {activeRound.status === 'playing' && (
+            <motion.div
+              key="gameplay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-6"
+              dir="rtl"
+            >
+              {/* Letter Title, Timer control info */}
+              <div className="flex flex-col sm:flex-row gap-4 items-stretch justify-between">
+                
+                {/* Big Letter indicator */}
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 flex items-center gap-4 shadow-md pr-6">
+                  <div className="h-14 w-14 rounded-2xl bg-amber-500 text-white font-black text-3xl flex items-center justify-center shadow-lg shadow-amber-500/20 animate-pulse">
+                    {activeRound.letter}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-zinc-900 dark:text-white">جولة حرف "{activeRound.letter}"</h3>
+                    <p className="text-xs text-zinc-400 mt-0.5">اكتب بسرعة قبل أن يُنهي الخصم كلماته!</p>
+                  </div>
+                </div>
+
+                {/* Standard timer component */}
+                <div className="flex-1 max-w-sm">
+                  <TickingTimer
+                    secondsRemaining={secondsRemaining}
+                    maxSeconds={timerMaxSeconds}
+                    isActive={isTimerActive}
+                    onTimeUp={handleTriggerStop}
+                    isMuted={isMuted}
+                  />
+                </div>
+
+              </div>
+
+              {/* Real-time AI Opponent Typing status monitor */}
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-250 dark:border-zinc-800 rounded-3xl p-5 shadow-lg">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-4.5 w-4.5 text-amber-500 animate-pulse" />
+                    <h3 className="text-xs font-black text-zinc-900 dark:text-white">لوحة ووضعية الخصم الآلي المنافس 🤖</h3>
+                  </div>
+                  <span className="text-[10px] bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 font-extrabold px-3 py-0.5 rounded-full border border-amber-250/20">
+                    الذكاء: {selectedDifficulty === 'easy' ? 'سهل 🐢' : selectedDifficulty === 'medium' ? 'متوسط 🦊' : 'صعب 🦁'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5">
+                  {CATEGORIES.map((cat) => {
+                    const status = opponentProgress[cat.key] || 'idle';
+                    let label = '💤 في الانتظار';
+                    let style = 'bg-zinc-50 dark:bg-zinc-950/40 text-zinc-400 border-zinc-200 dark:border-zinc-805';
+                    if (status === 'typing') {
+                      label = '✍️ يكتب الآن...';
+                      style = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 animate-pulse font-bold';
+                    } else if (status === 'done') {
+                      label = '✅ جاهز!';
+                      style = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-450 border-emerald-500/30 font-bold';
+                    }
+
+                    return (
+                      <div key={cat.key} className={`p-2 rounded-xl border text-center flex flex-col justify-between h-14 ${style}`}>
+                        <span className="text-[9px] font-black">{cat.label}</span>
+                        <span className="text-[10px] font-bold block mt-1">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Categorized Inputs Board */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {CATEGORIES.map((cat, index) => {
+                  const val = activeRound.answers[cat.key] || '';
+                  const isValidStart = val.trim().length > 0 && startsWithLetter(val, activeRound.letter);
+                  const isWrongStart = val.trim().length > 0 && !startsWithLetter(val, activeRound.letter);
+                  
+                  const rawPlaceholder = dynamicPlaceholders[cat.key] || cat.placeholder;
+                  const placeholderExample = rawPlaceholder
+                    .replace(/^(مثل|مثال|مثال ذلك|مثلاً)\s*[:\-]?\s*/g, '')
+                    .trim();
+                  const hintInfo = hints[cat.key];
+                  const hasError = hintErrorCategory[cat.key];
+
+                  return (
+                    <motion.div
+                      key={cat.key}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={`bg-white dark:bg-zinc-900 border rounded-2xl p-4 sm:p-4.5 shadow-sm transition-all flex flex-col justify-between ${
+                        isValidStart 
+                          ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-500/2' 
+                          : isWrongStart 
+                          ? 'border-rose-300 dark:border-rose-800 bg-rose-500/2' 
+                          : 'border-zinc-200 dark:border-zinc-800 hover:border-amber-550/30'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-xs font-black text-zinc-700 dark:text-zinc-250 flex items-center gap-1.5">
+                          <span>{cat.label}</span>
+                        </label>
+
+                        <div className="flex items-center gap-1.5">
+                          {/* Hint request button */}
+                          <button
+                            type="button"
+                            disabled={hintInfo?.loading}
+                            onClick={() => handleRequestHint(cat.key)}
+                            className="bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-750 border border-zinc-200 dark:border-zinc-700 text-amber-600 dark:text-amber-400 font-extrabold text-[9px] py-1 px-2.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                          >
+                            <Lightbulb className="h-3 w-3" />
+                            <span>
+                              {hintInfo?.loading 
+                                ? 'جاري استدعاء...' 
+                                : hintInfo?.word 
+                                ? 'تم شراؤه ✨' 
+                                : `شراء تلميح 💡 (${HINT_COST_POINTS} 🪙)`}
+                            </span>
+                          </button>
+
+                          {/* Visual indicator of matching letter */}
+                          {isValidStart && (
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-455 font-bold bg-emerald-50 dark:bg-emerald-950/20 py-0.5 px-2 rounded-md flex items-center gap-1">
+                              <Check className="h-3 w-3 stroke-[2.5]" />
+                              <span>بداية صحيحة</span>
+                            </span>
+                          )}
+                          {isWrongStart && (
+                            <span className="text-[10px] text-rose-600 dark:text-rose-455 font-bold bg-rose-50 dark:bg-rose-950/20 py-0.5 px-2 rounded-md flex items-center gap-1 animate-pulse">
+                              <X className="h-3 w-3 stroke-[2.5]" />
+                              <span>تأكد من الحرف الأول</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Points purchase warning */}
+                      {hasError && (
+                        <div className="text-[9px] text-rose-600 bg-rose-100/50 dark:bg-rose-950/40 p-1 rounded-lg text-center font-bold mt-1 animate-shake border border-rose-200 dark:border-rose-900">
+                          ⚠️ {hasError}
+                        </div>
+                      )}
+
+                      <input
+                        type="text"
+                        value={val}
+                        onChange={(e) => handleAnswerChange(cat.key, e.target.value)}
+                        placeholder="اكتب الإجابة هنا..."
+                        className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 py-2.5 px-3.5 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-amber-500 focus:bg-white dark:focus:bg-zinc-950 transition-colors mt-2 text-right"
+                        dir="rtl"
+                        autoFocus={index === 0}
+                      />
+
+                      {/* Display retrieved hint for the category */}
+                      {hintInfo?.word && (
+                        <div className="mt-2.5 flex items-center justify-between bg-amber-500/5 border border-dashed border-amber-300 dark:border-amber-900/50 p-2 rounded-xl text-[10px] text-amber-700 dark:text-amber-400 animate-fadeIn">
+                          <span className="font-semibold">تلميح متاح: <strong>{hintInfo.word}</strong></span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleAnswerChange(cat.key, hintInfo.word);
+                              playTickSound();
+                            }}
+                            className="bg-amber-505 bg-amber-500 text-white font-extrabold px-2.5 py-0.5 rounded-md active:scale-95 cursor-pointer hover:bg-amber-600 transition-colors text-[9px]"
+                          >
+                            تعبئة تلقائية 🤝
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              {/* Action Buttons: STOP, Restart */}
+              <div className="flex items-center justify-between pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                <button
+                  onClick={handleRestart}
+                  className="py-3 px-6 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-650 dark:text-zinc-300 font-extrabold text-xs rounded-2xl cursor-pointer"
+                >
+                  إعادة تهيئة / إلغاء الجولة
+                </button>
+
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-zinc-400 font-bold hidden sm:inline">
+                    تم كتابة {isFilledCount} من أصل 7 فئات
+                  </span>
+
+                  <button
+                    onClick={handleTriggerStop}
+                    className="flex items-center gap-2.5 py-4 px-10 bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-rose-600/20 hover:shadow-rose-600/30 hover:scale-[1.01] active:scale-98 transition-all cursor-pointer"
+                  >
+                    <span>STOP! تقييم ومواجهة الخصم 🛑</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STATE 4: SUBMITTING / AI IS GRADING */}
+          {activeRound.status === 'submitting' && (
+            <motion.div
+              key="grading"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="max-w-md w-full mx-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 shadow-xl text-center"
+              dir="rtl"
+            >
+              {/* Spinner animation */}
+              <div className="relative flex justify-center py-6">
+                <div className="h-20 w-20 rounded-full border-4 border-zinc-100 dark:border-zinc-800 border-t-amber-500 animate-spin" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+                  <Sparkles className="h-7 w-7 text-amber-500 animate-pulse" />
+                </div>
+              </div>
+
+              <h2 className="text-lg font-black text-zinc-900 dark:text-white mt-4">الحكم يوثّق الدرجات ونتائج المواجهة...</h2>
+              
+              {/* Rotating funny Arabic messages */}
+              <div className="h-10 mt-2 flex items-center justify-center">
+                <AnimatePresence mode="wait">
+                  <motion.p
+                     key={loadingMsgIdx}
+                     initial={{ opacity: 0, y: 10 }}
+                     animate={{ opacity: 1, y: 0 }}
+                     exit={{ opacity: 0, y: -10 }}
+                     className="text-xs text-zinc-500 dark:text-zinc-350 leading-relaxed font-semibold italic"
+                  >
+                    {loadingMessages[loadingMsgIdx]}
+                  </motion.p>
+                </AnimatePresence>
+              </div>
+
+              <p className="text-[10px] text-zinc-400 mt-6 leading-relaxed">
+                نقوم باستخدام Gemini Flash للتحقق العادل بمقارنة فورية بينك وبين تصنيفات الخصم الآلي، انتظر ثانية واحدة!
+              </p>
+            </motion.div>
+          )}
+
+          {/* STATE 5: REVIEWING (RESULTS AND CHARTS) */}
+          {activeRound.status === 'reviewing' && (
+            <motion.div
+              key="results"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full"
+            >
+              <div className="mb-4">
+                <button
+                  onClick={handleRestart}
+                  className="text-xs text-zinc-400 hover:text-zinc-650 flex items-center gap-1 cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  <span>العودة للشاشة الرئيسية</span>
+                </button>
+              </div>
+
+              {/* History contains compiled rounds */}
+              {gameState.roundsHistory.length > 0 && (
+                <ResultsDashboard
+                  round={gameState.roundsHistory[0]}
+                  onRestart={handleRestart}
+                  history={gameState.roundsHistory}
+                  onClearHistory={handleClearHistory}
+                  userPoints={userPoints}
+                />
+              )}
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+      </main>
+
+      {/* Rules instructions dialog */}
+      <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
 
     </div>
   );
