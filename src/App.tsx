@@ -21,7 +21,8 @@ import {
   Type,
   Settings,
   Sun,
-  Moon
+  Moon,
+  ShieldAlert
 } from 'lucide-react';
 
 import { Note, Label, NOTE_COLORS } from './types';
@@ -86,9 +87,38 @@ export default function App() {
   // Navigation & Filtering
   const [currentSection, setCurrentSection] = useState<'notes' | 'trash' | string>('notes'); // labelId can be a section
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Core config states
   const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
   const [isAr, setIsAr] = useState<boolean>(true); // default Arabic
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
+
+  // Custom typography states
+  const [fontFamily, setFontFamily] = useState<string>('cairo');
+  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg' | 'xl'>('base');
+
+  // Security: PIN lock for whole application
+  const [appLockEnabled, setAppLockEnabled] = useState<boolean>(false);
+  const [appLockPIN, setAppLockPIN] = useState<string>('1234');
+  const [isAppLocked, setIsAppLocked] = useState<boolean>(false);
+
+  // Private locked notes password
+  const [notesPassword, setNotesPassword] = useState<string>('1234');
+
+  // Trash & Reminders Auto delete config
+  const [autoDeleteDays, setAutoDeleteDays] = useState<number>(30);
+
+  // Reminder alarm style selection
+  const [reminderAlertStyle, setReminderAlertStyle] = useState<'chime' | 'beep' | 'silent'>('beep');
+
+  // Simulated Google Cloud Drive sync stats
+  const [isSyncConnected, setIsSyncConnected] = useState<boolean>(false);
+  const [syncEmail, setSyncEmail] = useState<string>('ae90op@gmail.com');
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+
+  // Lock Screen Input state
+  const [enteredPIN, setEnteredPIN] = useState('');
+  const [lockError, setLockError] = useState(false);
 
   // Edit states variables
   const [activeEditingNote, setActiveEditingNote] = useState<Note | null>(null);
@@ -102,13 +132,101 @@ export default function App() {
 
   // Synchronize CSS Class with Theme parameter
   useEffect(() => {
-    if (theme === 'dark') {
+    let activeTheme: 'light' | 'dark' = 'dark';
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      activeTheme = prefersDark ? 'dark' : 'light';
+    } else {
+      activeTheme = theme === 'dark' ? 'dark' : 'light';
+    }
+
+    if (activeTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
     localStorage.setItem('keep_theme', theme);
   }, [theme]);
+
+  // Persistent savers
+  useEffect(() => {
+    localStorage.setItem('keep_layout', viewLayout);
+  }, [viewLayout]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_language', isAr ? 'ar' : 'en');
+  }, [isAr]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_font_family', fontFamily);
+  }, [fontFamily]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_font_size', fontSize);
+  }, [fontSize]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_app_lock_enabled', appLockEnabled ? 'true' : 'false');
+  }, [appLockEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_app_lock_pin', appLockPIN);
+  }, [appLockPIN]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_notes_password', notesPassword);
+  }, [notesPassword]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_auto_delete_days', autoDeleteDays.toString());
+  }, [autoDeleteDays]);
+
+  useEffect(() => {
+    localStorage.setItem('keep_reminder_alert_style', reminderAlertStyle);
+  }, [reminderAlertStyle]);
+
+  // Sync utilities
+  const handleConnectSync = (email: string) => {
+    setIsSyncConnected(true);
+    setSyncEmail(email);
+    localStorage.setItem('keep_sync_connected', 'true');
+    localStorage.setItem('keep_sync_email', email);
+  };
+
+  const handleDisconnectSync = () => {
+    setIsSyncConnected(false);
+    localStorage.setItem('keep_sync_connected', 'false');
+  };
+
+  const handleTriggerSyncNow = async () => {
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const timestamp = Date.now();
+        setLastSyncTime(timestamp);
+        localStorage.setItem('keep_last_sync_time', timestamp.toString());
+        localStorage.setItem('keep_cloud_sync_backup', JSON.stringify(notes));
+        resolve();
+      }, 1500);
+    });
+  };
+
+  const handleWipeAllData = () => {
+    setNotes([]);
+    setLabels(STARTER_LABELS);
+    localStorage.removeItem('keep_notes');
+    localStorage.removeItem('keep_labels');
+    setViewLayout('grid');
+    setFontFamily('cairo');
+    setFontSize('base');
+    setAppLockEnabled(false);
+    setAppLockPIN('1234');
+    setNotesPassword('1234');
+    setAutoDeleteDays(30);
+    setReminderAlertStyle('beep');
+    setIsSyncConnected(false);
+    setSyncEmail('ae90op@gmail.com');
+    setLastSyncTime(null);
+  };
 
   // Load state from localStorage on mount
   useEffect(() => {
@@ -144,12 +262,24 @@ export default function App() {
     // Parse notes
     if (savedNotes) {
       try {
-        setNotes(JSON.parse(savedNotes));
+        const parsedNotes: Note[] = JSON.parse(savedNotes);
+        const migratedNotes = parsedNotes.map(n => {
+          if (n.isArchived) {
+            return { ...n, isArchived: false, isTrashed: true, updatedAt: Date.now() };
+          }
+          return n;
+        });
+        setNotes(migratedNotes);
       } catch (e) {
         setNotes(STARTER_NOTES(parsedLabels));
       }
     } else {
-      const starters = STARTER_NOTES(parsedLabels);
+      const starters = STARTER_NOTES(parsedLabels).map(n => {
+        if (n.isArchived) {
+          return { ...n, isArchived: false, isTrashed: true };
+        }
+        return n;
+      });
       setNotes(starters);
       localStorage.setItem('keep_notes', JSON.stringify(starters));
     }
@@ -157,6 +287,41 @@ export default function App() {
     // Parse config
     if (savedLayout === 'list') setViewLayout('list');
     if (savedLanguage === 'en') setIsAr(false);
+
+    // Load custom settings definitions
+    const savedFontFamily = localStorage.getItem('keep_font_family');
+    if (savedFontFamily) setFontFamily(savedFontFamily);
+
+    const savedFontSize = localStorage.getItem('keep_font_size') as 'sm' | 'base' | 'lg' | 'xl' | null;
+    if (savedFontSize) setFontSize(savedFontSize);
+
+    const savedAppLockEnabled = localStorage.getItem('keep_app_lock_enabled') === 'true';
+    setAppLockEnabled(savedAppLockEnabled);
+
+    const savedAppLockPIN = localStorage.getItem('keep_app_lock_pin');
+    if (savedAppLockPIN) setAppLockPIN(savedAppLockPIN);
+
+    if (savedAppLockEnabled && savedAppLockPIN) {
+      setIsAppLocked(true);
+    }
+
+    const savedNotesPassword = localStorage.getItem('keep_notes_password');
+    if (savedNotesPassword) setNotesPassword(savedNotesPassword);
+
+    const savedAutoDeleteDays = localStorage.getItem('keep_auto_delete_days');
+    if (savedAutoDeleteDays) setAutoDeleteDays(parseInt(savedAutoDeleteDays));
+
+    const savedReminderStyle = localStorage.getItem('keep_reminder_alert_style') as 'chime' | 'beep' | 'silent' | null;
+    if (savedReminderStyle) setReminderAlertStyle(savedReminderStyle);
+
+    const savedSyncConnected = localStorage.getItem('keep_sync_connected') === 'true';
+    setIsSyncConnected(savedSyncConnected);
+
+    const savedSyncEmail = localStorage.getItem('keep_sync_email');
+    if (savedSyncEmail) setSyncEmail(savedSyncEmail);
+
+    const savedLastSyncTime = localStorage.getItem('keep_last_sync_time');
+    if (savedLastSyncTime) setLastSyncTime(parseInt(savedLastSyncTime));
   }, []);
 
   // Save changes to localStorage whenever notes or labels updates asynchronously (Dexie / localforage ready)
@@ -190,6 +355,9 @@ export default function App() {
   
   // Create / Update Note
   const handleSaveNote = async (noteData: Partial<Note>) => {
+    // If incoming noteData says isArchived: true, convert to isTrashed: true
+    const shouldTrash = noteData.isArchived || noteData.isTrashed || false;
+
     if (activeEditingNote) {
       // Editing Mode
       const updated = notes.map(n => {
@@ -197,6 +365,8 @@ export default function App() {
           return {
             ...n,
             ...noteData,
+            isArchived: false,
+            isTrashed: shouldTrash,
             updatedAt: Date.now()
           };
         }
@@ -214,8 +384,8 @@ export default function App() {
         checklistItems: noteData.checklistItems || [],
         color: noteData.color || 'default',
         isPinned: noteData.isPinned || false,
-        isArchived: noteData.isArchived || false,
-        isTrashed: false,
+        isArchived: false,
+        isTrashed: shouldTrash,
         labels: noteData.labels || [],
         drawingData: noteData.drawingData || null,
         drawingPaths: noteData.drawingPaths || [],
@@ -237,7 +407,14 @@ export default function App() {
   const handleUpdateNoteField = async (noteId: string, updates: Partial<Note>) => {
     const updated = notes.map(n => {
       if (n.id === noteId) {
-        return { ...n, ...updates, updatedAt: Date.now() };
+        const shouldTrash = updates.isArchived || updates.isTrashed || n.isTrashed || false;
+        return { 
+          ...n, 
+          ...updates, 
+          isArchived: false, 
+          isTrashed: shouldTrash, 
+          updatedAt: Date.now() 
+        };
       }
       return n;
     });
@@ -328,16 +505,13 @@ export default function App() {
 
       // Section sorting
       if (currentSection === 'notes') {
-        return !note.isTrashed && !note.isArchived;
-      }
-      if (currentSection === 'archive') {
-        return !note.isTrashed && note.isArchived;
+        return !note.isTrashed;
       }
       if (currentSection === 'trash') {
         return note.isTrashed;
       }
-      // Section is actually a Label ID (excludes archived and trashed)
-      return !note.isTrashed && !note.isArchived && note.labels.includes(currentSection);
+      // Section is actually a Label ID (excludes trashed notes)
+      return !note.isTrashed && note.labels.includes(currentSection);
     });
   };
 
@@ -347,20 +521,159 @@ export default function App() {
   const pinnedNotes = filteredList.filter(n => n.isPinned);
   const unpinnedNotes = filteredList.filter(n => !n.isPinned);
 
+  // Core stats counters for sidebar badges
+  const totalNotesCount = notes.filter(n => !n.isTrashed).length;
+  const totalTrashCount = notes.filter(n => n.isTrashed).length;
+  const getNotesCountForLabel = (lblId: string) => notes.filter(n => !n.isTrashed && n.labels.includes(lblId)).length;
+
   // Active section metadata display title
   const getActiveSectionTitle = () => {
     if (currentSection === 'notes') return isAr ? 'الملاحظات' : 'Notes';
-    if (currentSection === 'archive') return isAr ? 'الأرشيف' : 'Archive';
     if (currentSection === 'trash') return isAr ? 'سلة المهملات' : 'Trash';
     const activeLabel = labels.find(l => l.id === currentSection);
     return activeLabel ? activeLabel.name : '';
   };
 
+  const getFontFamilyClass = () => {
+    switch (fontFamily) {
+      case 'cairo': return 'font-cairo';
+      case 'tajawal': return 'font-tajawal';
+      case 'elmessiri': return 'font-elmessiri';
+      case 'almarai': return 'font-almarai';
+      case 'inter': return 'font-sans';
+      case 'mono': return 'font-mono';
+      default: return 'font-cairo';
+    }
+  };
+
+  const getFontSizeClass = () => {
+    switch (fontSize) {
+      case 'sm': return 'text-xs md:text-sm';
+      case 'base': return 'text-sm md:text-base';
+      case 'lg': return 'text-base md:text-lg';
+      case 'xl': return 'text-lg md:text-xl';
+      default: return 'text-sm';
+    }
+  };
+
+  const handleKeypadPress = (val: string) => {
+    setLockError(false);
+    if (enteredPIN.length < 4) {
+      const nextPIN = enteredPIN + val;
+      setEnteredPIN(nextPIN);
+      if (nextPIN.length === 4) {
+        if (nextPIN === appLockPIN) {
+          setIsAppLocked(false);
+          setEnteredPIN('');
+        } else {
+          setLockError(true);
+          setEnteredPIN('');
+        }
+      }
+    }
+  };
+
+  const handleKeypadDelete = () => {
+    setEnteredPIN(prev => prev.slice(0, prev.length - 1));
+  };
+
+  if (isAppLocked) {
+    return (
+      <div 
+        className="fixed inset-0 bg-zinc-950 text-white z-[9999] flex flex-col items-center justify-center p-6 select-none"
+        dir={isAr ? 'rtl' : 'ltr'}
+      >
+        <div className="max-w-xs w-full space-y-8 text-center animate-in fade-in duration-300">
+          
+          {/* Logo Or Badge */}
+          <div className="flex flex-col items-center space-y-3">
+            <div className="p-4 bg-amber-500/10 rounded-full border border-amber-500/20 text-amber-500 animate-pulse">
+              <ShieldAlert className="h-10 w-10" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black tracking-tight">{isAr ? 'خزانة المذكرات الآمنة' : 'Secure Keep Vault'}</h2>
+              <p className="text-[11px] text-zinc-500 mt-1 uppercase font-mono tracking-widest font-black">
+                {isAr ? 'معيار الحماية محلي بالكامل' : 'Local Sandbox Security Mode'}
+              </p>
+            </div>
+          </div>
+
+          {/* Dots Indicator */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-center gap-3.5 h-6">
+              {[0, 1, 2, 3].map(idx => {
+                const filled = enteredPIN.length > idx;
+                return (
+                  <div 
+                    key={idx}
+                    className={`h-3 w-3 rounded-full transition-all duration-150 ${
+                      filled ? 'bg-amber-500 scale-125 shadow-md shadow-amber-500/50' : 'bg-zinc-800 border border-zinc-700'
+                    }`}
+                  />
+                );
+              })}
+            </div>
+            {lockError && (
+              <span className="text-xs text-rose-500 font-bold block animate-pulse">
+                {isAr ? 'رمز قفل غير صحيح! حاول مجدداً.' : 'Incorrect PIN! Try again.'}
+              </span>
+            )}
+          </div>
+
+          {/* Custom keypad */}
+          <div className="grid grid-cols-3 gap-3">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+              <button
+                key={num}
+                type="button"
+                onClick={() => handleKeypadPress(num.toString())}
+                className="py-3.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-900 rounded-2xl text-lg font-black transition-all active:scale-95 cursor-pointer text-white"
+              >
+                {num}
+              </button>
+            ))}
+            
+            <button
+              type="button"
+              onClick={() => { setEnteredPIN(''); setLockError(false); }}
+              className="py-3.5 bg-zinc-950 border border-transparent rounded-2xl text-[11px] font-black hover:text-rose-500 transition-colors uppercase cursor-pointer text-zinc-400"
+            >
+              {isAr ? 'مسح' : 'Clear'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleKeypadPress('0')}
+              className="py-3.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-900 rounded-2xl text-lg font-black transition-all active:scale-95 cursor-pointer text-white"
+            >
+              0
+            </button>
+
+            <button
+              type="button"
+              onClick={handleKeypadDelete}
+              className="py-3.5 bg-zinc-950 border border-transparent rounded-2xl text-xs font-black hover:text-amber-500 transition-colors cursor-pointer text-zinc-400"
+            >
+              ←
+            </button>
+          </div>
+
+          <p className="text-[10px] text-zinc-500 leading-relaxed pt-4 border-t border-zinc-900">
+            {isAr 
+              ? 'يرجى إدخال رمز الـ PIN السري الخاص بك لإلغاء القفل. التثبيت محلي آمن لحماية سرية الملاحظات.' 
+              : 'Enter your custom 4-digit passcode PIN to proceed. If you forgot the combination, clear browser site cache.'}
+          </p>
+
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans selection:bg-yellow-420 selection:text-black">
+    <div className={`min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col selection:bg-yellow-420 selection:text-black ${getFontFamilyClass()} ${getFontSizeClass()}`}>
       
       {/* -------------------- MAIN TOP HEADER NAVBAR -------------------- */}
-      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-850 h-16 px-4 py-2 flex items-center justify-between sticky top-0 z-40 shadow-xs">
+      <header className="bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 h-16 px-4 py-2 flex items-center justify-between sticky top-0 z-40 shadow-xs">
         
         {/* Brand Details */}
         <div className="flex items-center gap-3">
@@ -380,7 +693,7 @@ export default function App() {
         </div>
 
         {/* Global Instant Search input (In context filtering) */}
-        <div className="hidden sm:flex items-center gap-2 bg-zinc-105 dark:bg-zinc-950/80 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 w-full max-w-md mx-6 transition-colors focus-within:border-amber-500/55">
+        <div className="hidden sm:flex items-center gap-2 bg-zinc-100 dark:bg-zinc-950/80 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 w-full max-w-md mx-6 transition-colors focus-within:border-amber-500/55">
           <Search className="h-4.5 w-4.5 text-zinc-400" />
           <input
             type="text"
@@ -403,19 +716,6 @@ export default function App() {
         {/* Global Right Actions (Layout switch, Settings, Clock) */}
         <div className="flex items-center gap-2">
           
-          {/* Quick theme toggler */}
-          <button
-            onClick={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
-            className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-850 bg-white hover:bg-zinc-100 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-350 transition-colors cursor-pointer"
-            title={isAr ? 'تبديل المظهر (فاتح / داكن)' : 'Toggle light/dark theme'}
-          >
-            {theme === 'light' ? (
-              <Moon className="h-4 w-4.5 text-zinc-700" />
-            ) : (
-              <Sun className="h-4 w-4.5 text-amber-500" />
-            )}
-          </button>
-
           {/* Settings button in the old place of New Note */}
           <button
             onClick={() => setIsSettingsOpen(true)}
@@ -431,8 +731,8 @@ export default function App() {
       </header>
 
       {/* Mobile search bar visible on xs devices */}
-      <div className="flex sm:hidden p-3 bg-zinc-100 border-b border-zinc-200 dark:bg-zinc-950 dark:border-zinc-850 justify-center">
-        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-250 dark:border-zinc-800 w-full">
+      <div className="flex sm:hidden p-3 bg-zinc-100 border-b border-zinc-200 dark:bg-zinc-950 dark:border-zinc-805 justify-center">
+        <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 w-full">
           <Search className="h-4 w-4 text-zinc-400" />
           <input
             type="text"
@@ -443,7 +743,7 @@ export default function App() {
             dir={isAr ? 'rtl' : 'ltr'}
           />
           {searchQuery && (
-            <button onClick={() => setSearchQuery('')} className="text-zinc-450">×</button>
+            <button onClick={() => setSearchQuery('')} className="text-zinc-400 hover:text-zinc-650">×</button>
           )}
         </div>
       </div>
@@ -470,7 +770,12 @@ export default function App() {
             }`}
           >
             <Lightbulb className="h-4.5 w-4.5" />
-            <span>{isAr ? 'الملاحظات' : 'My Notes'}</span>
+            <div className="flex-1 flex items-center justify-between gap-2">
+              <span>{isAr ? 'الملاحظات' : 'My Notes'}</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-bold font-mono">
+                {totalNotesCount}
+              </span>
+            </div>
           </button>
 
           {/* Switch: Labels Editor */}
@@ -496,7 +801,12 @@ export default function App() {
                   }`}
                 >
                   <TagIcon className="h-4 w-4 rotate-90" />
-                  <span className="truncate max-w-28 sm:max-w-none">{lbl.name}</span>
+                  <div className="flex-1 flex items-center justify-between min-w-0">
+                    <span className="truncate max-w-28 sm:max-w-none">{lbl.name}</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-200/40 dark:bg-zinc-850 text-zinc-500 font-bold font-mono ml-2">
+                      {getNotesCountForLabel(lbl.id)}
+                    </span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -504,19 +814,6 @@ export default function App() {
 
           {/* Separation list */}
           <div className="hidden md:block w-full h-px bg-zinc-150 dark:bg-zinc-850 my-2" />
-
-          {/* Switch: Archive */}
-          <button
-            onClick={() => setCurrentSection('archive')}
-            className={`flex items-center gap-3 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 ${
-              currentSection === 'archive'
-                ? 'bg-amber-500/10 dark:bg-amber-500/5 text-amber-650 dark:text-amber-450 border border-amber-500/20 shadow-xs'
-                : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-850 hover:text-zinc-800 dark:hover:text-zinc-200 border border-transparent'
-            }`}
-          >
-            <Archive className="h-4.5 w-4.5" />
-            <span>{isAr ? 'الأرشيف' : 'Archive'}</span>
-          </button>
 
           {/* Switch: Trash */}
           <button
@@ -528,7 +825,16 @@ export default function App() {
             }`}
           >
             <Trash2 className="h-4.5 w-4.5" />
-            <span>{isAr ? 'المهملات' : 'Trash bin'}</span>
+            <div className="flex-1 flex items-center justify-between gap-2">
+              <span>{isAr ? 'المهملات' : 'Trash bin'}</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold font-mono ${
+                totalTrashCount > 0 
+                  ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400' 
+                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-650'
+              }`}>
+                {totalTrashCount}
+              </span>
+            </div>
           </button>
 
         </aside>
@@ -598,8 +904,6 @@ export default function App() {
               <div className="p-4 bg-zinc-100 dark:bg-zinc-900 rounded-2xl mb-3 border border-zinc-200/50 dark:border-zinc-800/50">
                 {currentSection === 'trash' ? (
                   <Trash2 className="h-12 w-12 text-zinc-300 dark:text-zinc-700 stroke-1" />
-                ) : currentSection === 'archive' ? (
-                  <Archive className="h-12 w-12 text-zinc-300 dark:text-zinc-700 stroke-1" />
                 ) : (
                   <Lightbulb className="h-12 w-12 text-zinc-300 dark:text-zinc-700 stroke-1" />
                 )}
@@ -607,15 +911,11 @@ export default function App() {
               <h3 className="font-extrabold text-sm text-zinc-700 dark:text-zinc-300">
                 {currentSection === 'trash'
                   ? (isAr ? 'سلة المهملات فارغة' : 'No notes in trash')
-                  : currentSection === 'archive'
-                  ? (isAr ? 'لا توجد ملاحظات مؤرشفة' : 'No archived notes')
                   : (isAr ? 'ابدأ بتدوين ملاحظاتك الأولى!' : 'No matching notes found')}
               </h3>
               <p className="text-[11px] opacity-75 max-w-sm mt-1 leading-relaxed">
                 {currentSection === 'trash'
                   ? (isAr ? 'عند حذف ملاحظة، سوف تُنقل هنا ويمكنك استعادتها لاحقاً.' : 'Notes you delete will appear here and can be restored.')
-                  : currentSection === 'archive'
-                  ? (isAr ? 'أرشف الملاحظات القديمة لإبعادها عن الواجهة الرئيسية دون خسارتها.' : 'Archive notes to tidy up your board while keeping them search-ready.')
                   : (isAr ? 'اضغط على زر ملاحظة جديدة لتدوين أفكارك ورسم الرسومات وحفظ الصور.' : 'Click "New Note" to easily capture checklist plans, hand sketches, and photos.')}
               </p>
             </div>
@@ -649,6 +949,7 @@ export default function App() {
                         onRestoreNote={handleRestoreNote}
                         isAr={isAr}
                         onEditDrawing={handleEditDrawingOnNote}
+                        notesPassword={notesPassword}
                       />
                     ))}
                   </div>
@@ -680,6 +981,7 @@ export default function App() {
                         onRestoreNote={handleRestoreNote}
                         isAr={isAr}
                         onEditDrawing={handleEditDrawingOnNote}
+                        notesPassword={notesPassword}
                       />
                     ))}
                   </div>
@@ -746,6 +1048,31 @@ export default function App() {
             onToggleLanguage={handleToggleLanguage}
             theme={theme}
             onChangeTheme={setTheme}
+            fontFamily={fontFamily}
+            onChangeFontFamily={setFontFamily}
+            fontSize={fontSize}
+            onChangeFontSize={setFontSize}
+            viewLayout={viewLayout}
+            onChangeViewLayout={setViewLayout}
+            appLockEnabled={appLockEnabled}
+            onChangeAppLockEnabled={setAppLockEnabled}
+            appLockPIN={appLockPIN}
+            onChangeAppLockPIN={setAppLockPIN}
+            notesPassword={notesPassword}
+            onChangeNotesPassword={setNotesPassword}
+            autoDeleteDays={autoDeleteDays}
+            onChangeAutoDeleteDays={setAutoDeleteDays}
+            reminderAlertStyle={reminderAlertStyle}
+            onChangeReminderAlertStyle={setReminderAlertStyle}
+            isSyncConnected={isSyncConnected}
+            syncEmail={syncEmail}
+            lastSyncTime={lastSyncTime}
+            onConnectSync={handleConnectSync}
+            onDisconnectSync={handleDisconnectSync}
+            onTriggerSyncNow={handleTriggerSyncNow}
+            notes={notes}
+            setNotes={setNotes}
+            onClearAllNotes={handleWipeAllData}
           />
         )}
 

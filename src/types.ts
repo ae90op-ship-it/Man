@@ -32,6 +32,7 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   reminder?: string; // Optional: ISO date string for reminder
+  isLocked?: boolean; // Password protected note option
 }
 
 export interface Label {
@@ -57,7 +58,7 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameEN: 'Default',
     bgClass: 'bg-white dark:bg-zinc-900',
     borderClass: 'border-zinc-200 dark:border-zinc-800',
-    textClass: 'text-zinc-805 dark:text-zinc-100',
+    textClass: 'text-zinc-800 dark:text-zinc-200',
     darkBgClass: 'dark:bg-zinc-900',
     buttonColor: 'bg-zinc-200 dark:bg-zinc-700',
   },
@@ -76,19 +77,19 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameAR: 'أحمر',
     nameEN: 'Red',
     bgClass: 'bg-rose-50 dark:bg-rose-950/20',
-    borderClass: 'border-rose-100 dark:border-rose-900/40',
+    borderClass: 'border-rose-100 dark:border-rose-900/45',
     textClass: 'text-rose-900 dark:text-rose-200',
-    darkBgClass: 'dark:bg-emerald-950/20',
+    darkBgClass: 'dark:bg-rose-950/20',
     buttonColor: 'bg-rose-300 dark:bg-rose-800',
   },
   {
     id: 'amber',
     nameAR: 'برتقالي',
     nameEN: 'Amber',
-    bgClass: 'bg-amber-50 dark:bg-amber-955/20',
-    borderClass: 'border-amber-100 dark:border-amber-900/40',
+    bgClass: 'bg-amber-50 dark:bg-amber-950/20',
+    borderClass: 'border-amber-100 dark:border-amber-900/45',
     textClass: 'text-amber-900 dark:text-amber-200',
-    darkBgClass: 'dark:bg-amber-955/20',
+    darkBgClass: 'dark:bg-amber-950/20',
     buttonColor: 'bg-amber-300 dark:bg-amber-800',
   },
   {
@@ -96,19 +97,19 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameAR: 'أصفر',
     nameEN: 'Yellow',
     bgClass: 'bg-yellow-50 dark:bg-yellow-950/20',
-    borderClass: 'border-yellow-200 dark:border-yellow-905/40',
+    borderClass: 'border-yellow-200 dark:border-yellow-900/45',
     textClass: 'text-yellow-900 dark:text-yellow-200',
     darkBgClass: 'dark:bg-yellow-950/20',
-    buttonColor: 'bg-yellow-200 dark:bg-yellow-850',
+    buttonColor: 'bg-yellow-200 dark:bg-yellow-800',
   },
   {
     id: 'green',
     nameAR: 'أخضر',
     nameEN: 'Green',
     bgClass: 'bg-emerald-50 dark:bg-emerald-950/20',
-    borderClass: 'border-emerald-100 dark:border-emerald-900/40',
+    borderClass: 'border-emerald-100 dark:border-emerald-900/45',
     textClass: 'text-emerald-900 dark:text-emerald-200',
-    darkBgClass: 'dark:bg-emerald-955/20',
+    darkBgClass: 'dark:bg-emerald-950/20',
     buttonColor: 'bg-emerald-300 dark:bg-emerald-800',
   },
   {
@@ -116,9 +117,9 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameAR: 'فيروزي',
     nameEN: 'Teal',
     bgClass: 'bg-teal-50 dark:bg-teal-950/20',
-    borderClass: 'border-teal-100 dark:border-teal-900/40',
+    borderClass: 'border-teal-100 dark:border-teal-900/45',
     textClass: 'text-teal-900 dark:text-teal-200',
-    darkBgClass: 'dark:bg-teal-955/20',
+    darkBgClass: 'dark:bg-teal-950/20',
     buttonColor: 'bg-teal-300 dark:bg-teal-800',
   },
   {
@@ -126,9 +127,9 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameAR: 'أزرق',
     nameEN: 'Blue',
     bgClass: 'bg-blue-50 dark:bg-blue-950/20',
-    borderClass: 'border-blue-105 dark:border-blue-900/40',
+    borderClass: 'border-blue-100 dark:border-blue-900/45',
     textClass: 'text-blue-900 dark:text-blue-200',
-    darkBgClass: 'dark:bg-blue-955/20',
+    darkBgClass: 'dark:bg-blue-950/20',
     buttonColor: 'bg-blue-300 dark:bg-blue-800',
   },
   {
@@ -136,9 +137,9 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameAR: 'كحلي',
     nameEN: 'Indigo',
     bgClass: 'bg-indigo-50 dark:bg-indigo-950/20',
-    borderClass: 'border-indigo-100 dark:border-indigo-900/40',
+    borderClass: 'border-indigo-100 dark:border-indigo-900/45',
     textClass: 'text-indigo-900 dark:text-indigo-200',
-    darkBgClass: 'dark:bg-indigo-955/20',
+    darkBgClass: 'dark:bg-indigo-950/20',
     buttonColor: 'bg-indigo-300 dark:bg-indigo-800',
   },
   {
@@ -146,9 +147,9 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameAR: 'بنفسجي',
     nameEN: 'Purple',
     bgClass: 'bg-purple-50 dark:bg-purple-950/20',
-    borderClass: 'border-purple-100 dark:border-purple-900/40',
+    borderClass: 'border-purple-100 dark:border-purple-900/45',
     textClass: 'text-purple-900 dark:text-purple-200',
-    darkBgClass: 'dark:bg-purple-955/20',
+    darkBgClass: 'dark:bg-purple-950/20',
     buttonColor: 'bg-purple-300 dark:bg-purple-800',
   },
   {
@@ -156,9 +157,9 @@ export const NOTE_COLORS: PaletteColor[] = [
     nameAR: 'وردي',
     nameEN: 'Pink',
     bgClass: 'bg-pink-50 dark:bg-pink-950/20',
-    borderClass: 'border-pink-101 dark:border-pink-900/40',
-    textClass: 'text-pink-905 dark:text-pink-200',
-    darkBgClass: 'dark:bg-pink-955/20',
+    borderClass: 'border-pink-100 dark:border-pink-900/45',
+    textClass: 'text-pink-900 dark:text-pink-200',
+    darkBgClass: 'dark:bg-pink-950/20',
     buttonColor: 'bg-pink-300 dark:bg-pink-800',
   }
 ];

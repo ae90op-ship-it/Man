@@ -10,7 +10,9 @@ import {
   Paintbrush,
   RotateCcw,
   Clock,
-  LayoutGrid
+  LayoutGrid,
+  Lock,
+  Key
 } from 'lucide-react';
 import { Note, Label, NOTE_COLORS, PaletteColor } from '../types';
 
@@ -24,6 +26,7 @@ interface NoteCardProps {
   onRestoreNote?: (noteId: string) => void;
   isAr: boolean;
   onEditDrawing?: (note: Note) => void;
+  notesPassword?: string;
 }
 
 export default function NoteCard({
@@ -34,10 +37,27 @@ export default function NoteCard({
   onDeleteNote,
   onRestoreNote,
   isAr,
-  onEditDrawing
+  onEditDrawing,
+  notesPassword
 }: NoteCardProps) {
   const [showColorMenu, setShowColorMenu] = useState(false);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const [typedPass, setTypedPass] = useState('');
+  const [authError, setAuthError] = useState(false);
+
+  const handleVerifyPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typedPass === (notesPassword || '1234')) {
+      setAuthError(false);
+      setIsUnlocking(false);
+      onSelect(note);
+    } else {
+      setAuthError(true);
+      setTypedPass('');
+    }
+  };
 
   // Match the note's color ID to its Palette definition
   const colorDef = NOTE_COLORS.find(c => c.id === note.color) || NOTE_COLORS[0];
@@ -138,143 +158,216 @@ export default function NoteCard({
 
   return (
     <div
-      onClick={() => !note.isTrashed && onSelect(note)}
+      onClick={() => {
+        if (note.isTrashed) return;
+        if (note.isLocked) {
+          setIsUnlocking(true);
+        } else {
+          onSelect(note);
+        }
+      }}
       className={`group relative rounded-2xl border ${colorDef.bgClass} ${colorDef.borderClass} ${colorDef.textClass} p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-lg ${
         note.isTrashed ? 'opacity-85 cursor-default' : 'cursor-pointer hover:scale-[1.01]'
       }`}
       dir={isAr ? 'rtl' : 'ltr'}
     >
-      
-      {/* Drawings/Images Top banners */}
-      <div className="flex flex-col gap-2 mb-3">
-        {/* Uploaded Images */}
-        {(note.imagePosition !== 'bottom') && renderImages()}
-
-        {/* Saved Vector Drawing Preview */}
-        {note.drawingData && (
-          <div className="w-full rounded-xl overflow-hidden bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-2 relative flex items-center justify-center">
-            <img 
-              src={note.drawingData} 
-              alt="Vector sketchpad image" 
-              className="max-h-40 object-contain mx-auto"
-              referrerPolicy="no-referrer"
-            />
-            {!note.isTrashed && onEditDrawing && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEditDrawing(note);
-                }}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-zinc-900/80 hover:bg-zinc-900 text-white transition-opacity scale-90 cursor-pointer"
-                title={isAr ? 'تعديل الرسم الكروكي' : 'Edit Sketch'}
-              >
-                <Paintbrush className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Note Main Body */}
-      <div>
-        {/* Title row */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          {note.title ? (
-            <h4 className="font-extrabold text-base tracking-tight break-words flex-1 leading-snug">
-              {note.title}
-            </h4>
-          ) : (
-            // Empty placeholder to balance spacing if no title exists
-            <div className="h-1.5" />
-          )}
-
-          {/* Pin Icon Toggle (Except in TRASH) */}
-          {!note.isTrashed && (
-            <button
-              onClick={handlePinToggle}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 ${
-                note.isPinned 
-                  ? 'opacity-100 text-amber-500 hover:bg-amber-100/30' 
-                  : 'text-zinc-400 hover:bg-zinc-100/30 dark:hover:bg-zinc-805/30'
-              }`}
-              title={note.isPinned ? (isAr ? 'إلغاء التثبيت' : 'Unpin note') : (isAr ? 'تثبيت الملاحظة' : 'Pin note')}
+          {note.isLocked && !note.isTrashed ? (
+        <div className="flex-1 flex flex-col justify-center py-5 text-center">
+          {isUnlocking ? (
+            <form 
+              onSubmit={handleVerifyPassword} 
+              onClick={(e) => e.stopPropagation()} 
+              className="space-y-3 p-1 animate-in zoom-in-95 duration-150"
             >
-              <Pin className={`h-4 w-4 transform transition-all ${note.isPinned ? 'rotate-45 fill-amber-500' : ''}`} />
-            </button>
-          )}
-        </div>
-
-        {/* Note content or checkboxes preview */}
-        {note.isChecklist ? (
-          <div className="space-y-1.5 mt-2">
-            {note.checklistItems.slice(0, 5).map((item) => (
-              <div
-                key={item.id}
-                onClick={(e) => toggleCheckItem(e, item.id)}
-                className="flex items-start gap-2.5 group/item text-xs cursor-pointer font-medium"
+              <div className="flex justify-center">
+                <Key className="h-6 w-6 text-amber-500 animate-pulse" />
+              </div>
+              <span className="text-[11px] font-bold block text-zinc-500 dark:text-zinc-400">
+                {isAr ? 'أدخل كلمة مرور الملاحظة:' : 'Enter Note Password:'}
+              </span>
+              <div className="flex gap-1.5 items-center justify-center">
+                <input
+                  type="password"
+                  autoFocus
+                  required
+                  placeholder="••••"
+                  value={typedPass}
+                  onChange={(e) => { setTypedPass(e.target.value); setAuthError(false); }}
+                  className={`w-24 text-center py-1 bg-white dark:bg-zinc-950 border ${authError ? 'border-rose-500' : 'border-zinc-350 dark:border-zinc-800'} rounded-lg text-xs font-black focus:outline-hidden text-zinc-900 dark:text-white`}
+                />
+                <button
+                  type="submit"
+                  className="py-1 px-2.5 bg-amber-500 hover:bg-amber-400 text-stone-900 rounded-lg text-xs font-black cursor-pointer shadow-xs"
+                >
+                  {isAr ? 'فتح' : 'Ok'}
+                </button>
+              </div>
+              {authError && (
+                <span className="text-[10px] text-rose-500 font-bold block animate-pulse">
+                  {isAr ? 'كلمة المرور غير صحيحة!' : 'Incorrect password!'}
+                </span>
+              )}
+              <button 
+                type="button" 
+                onClick={(e) => { e.stopPropagation(); setIsUnlocking(false); }} 
+                className="text-[9.5px] hover:underline text-zinc-400 hover:text-zinc-500 block mx-auto pt-1"
               >
-                {item.completed ? (
-                  <CheckSquare className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                ) : (
-                  <Square className="h-4 w-4 shrink-0 text-zinc-400 group-hover/item:text-zinc-600" />
-                )}
-                <span className={`break-all leading-tight ${item.completed ? 'line-through text-zinc-400 dark:text-zinc-505' : ''}`}>
-                  {item.text || '...'}
+                {isAr ? 'إلغاء' : 'Cancel'}
+              </button>
+            </form>
+          ) : (
+            <div 
+              onClick={(e) => { e.stopPropagation(); setIsUnlocking(true); }}
+              className="space-y-3 cursor-pointer py-4 group/lock rounded-xl hover:bg-zinc-150/40 dark:hover:bg-zinc-950/20 transition-all duration-200"
+            >
+              <div className="flex justify-center">
+                <Lock className="h-8 w-8 text-amber-500 group-hover/lock:scale-115 transition-transform duration-200" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-xs font-black text-zinc-800 dark:text-zinc-200 block truncate max-w-[150px] mx-auto">
+                  {note.title || (isAr ? 'ملاحظة مغلقة ومحمية' : 'Locked Protected Note')}
+                </span>
+                <span className="text-[9.5px] text-zinc-400 block max-w-[200px] mx-auto leading-normal">
+                  {isAr ? 'محتوى هذه المزدوجة مخفي بكلمة مرور خاصة. انقر لفك التشفير.' : 'Sensitive content hidden under lock. Click to view.'}
                 </span>
               </div>
-            ))}
-            {note.checklistItems.length > 5 && (
-              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-semibold pl-6 mt-1">
-                + {note.checklistItems.length - 5} {isAr ? 'مزيد من المهام...' : 'more items...'}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Drawings/Images Top banners */}
+          <div className="flex flex-col gap-2 mb-3">
+            {/* Uploaded Images */}
+            {(note.imagePosition !== 'bottom') && renderImages()}
+
+            {/* Saved Vector Drawing Preview */}
+            {note.drawingData && (
+              <div className="w-full rounded-xl overflow-hidden bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-2 relative flex items-center justify-center">
+                <img 
+                  src={note.drawingData} 
+                  alt="Vector sketchpad image" 
+                  className="max-h-40 object-contain mx-auto"
+                  referrerPolicy="no-referrer"
+                />
+                {!note.isTrashed && onEditDrawing && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditDrawing(note);
+                    }}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-lg bg-zinc-900/80 hover:bg-zinc-900 text-white transition-opacity scale-90 cursor-pointer"
+                    title={isAr ? 'تعديل الرسم الكروكي' : 'Edit Sketch'}
+                  >
+                    <Paintbrush className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Note Main Body */}
+          <div>
+            {/* Title row */}
+            <div className="flex items-start justify-between gap-2 mb-2">
+              {note.title ? (
+                <h4 className="font-extrabold text-base tracking-tight break-words flex-1 leading-snug">
+                  {note.title}
+                </h4>
+              ) : (
+                // Empty placeholder to balance spacing if no title exists
+                <div className="h-1.5" />
+              )}
+
+              {/* Pin Icon Toggle (Except in TRASH) */}
+              {!note.isTrashed && (
+                <button
+                  onClick={handlePinToggle}
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 ${
+                    note.isPinned 
+                      ? 'opacity-100 text-amber-500 hover:bg-amber-100/30' 
+                      : 'text-zinc-400 hover:bg-zinc-100/30 dark:hover:bg-zinc-805/30'
+                  }`}
+                  title={note.isPinned ? (isAr ? 'إلغاء التثبيت' : 'Unpin note') : (isAr ? 'تثبيت الملاحظة' : 'Pin note')}
+                >
+                  <Pin className={`h-4 w-4 transform transition-all ${note.isPinned ? 'rotate-45 fill-amber-500' : ''}`} />
+                </button>
+              )}
+            </div>
+
+            {/* Note content or checkboxes preview */}
+            {note.isChecklist ? (
+              <div className="space-y-1.5 mt-2">
+                {note.checklistItems.slice(0, 5).map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={(e) => toggleCheckItem(e, item.id)}
+                    className="flex items-start gap-2.5 group/item text-xs cursor-pointer font-medium"
+                  >
+                    {item.completed ? (
+                      <CheckSquare className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <Square className="h-4 w-4 shrink-0 text-zinc-400 group-hover/item:text-zinc-600" />
+                    )}
+                    <span className={`break-all leading-tight ${item.completed ? 'line-through text-zinc-400 dark:text-zinc-505' : ''}`}>
+                      {item.text || '...'}
+                    </span>
+                  </div>
+                ))}
+                {note.checklistItems.length > 5 && (
+                  <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-semibold pl-6 mt-1">
+                    + {note.checklistItems.length - 5} {isAr ? 'مزيد من المهام...' : 'more items...'}
+                  </p>
+                )}
+              </div>
+            ) : note.isTable && note.tableData ? (
+              <div className="overflow-x-auto border border-zinc-200/50 dark:border-zinc-800/40 rounded-xl my-1 bg-zinc-50/50 dark:bg-zinc-950/20 max-h-48 overflow-y-hidden" onClick={(e) => e.stopPropagation()}>
+                <table className="w-full text-[10px] font-semibold border-collapse">
+                  <thead>
+                    <tr className="bg-zinc-100/70 dark:bg-zinc-900/40 border-b border-zinc-250 dark:border-zinc-800/80">
+                      <th className="p-1 text-center text-zinc-400 font-mono w-6 border-r border-zinc-200 dark:border-zinc-800/50">#</th>
+                      {note.tableData[0]?.map((_, colIdx) => (
+                        <th key={colIdx} className="p-1 text-center text-zinc-500 font-mono uppercase border-r last:border-r-0 border-zinc-200 dark:border-zinc-800/50">
+                          {String.fromCharCode(65 + colIdx)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {note.tableData.slice(0, 5).map((row, rIdx) => (
+                      <tr key={rIdx} className="border-b last:border-0 border-zinc-200/50 dark:border-zinc-805/50">
+                        <td className="p-1 text-center font-mono text-zinc-400 bg-zinc-100/30 dark:bg-zinc-905/20 border-r border-zinc-250 dark:border-zinc-800/50 font-bold">
+                          {rIdx + 1}
+                        </td>
+                        {row.map((cellValue, cIdx) => (
+                          <td key={cIdx} className="p-1 border-r last:border-r-0 border-zinc-200/50 dark:border-zinc-805/50 truncate max-w-[80px]">
+                            {cellValue || '-'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {note.tableData.length > 5 && (
+                  <div className="text-[9px] text-zinc-405 font-bold p-1 text-center border-t border-zinc-205 dark:border-zinc-800">
+                    + {note.tableData.length - 5} {isAr ? 'صفوف إضافية...' : 'more rows...'}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap break-words opacity-90 line-clamp-6">
+                {note.content}
               </p>
             )}
           </div>
-        ) : note.isTable && note.tableData ? (
-          <div className="overflow-x-auto border border-zinc-200/50 dark:border-zinc-800/40 rounded-xl my-1 bg-zinc-50/50 dark:bg-zinc-950/20 max-h-48 overflow-y-hidden" onClick={(e) => e.stopPropagation()}>
-            <table className="w-full text-[10px] font-semibold border-collapse">
-              <thead>
-                <tr className="bg-zinc-100/70 dark:bg-zinc-900/40 border-b border-zinc-250 dark:border-zinc-800/80">
-                  <th className="p-1 text-center text-zinc-400 font-mono w-6 border-r border-zinc-200 dark:border-zinc-800/50">#</th>
-                  {note.tableData[0]?.map((_, colIdx) => (
-                    <th key={colIdx} className="p-1 text-center text-zinc-500 font-mono uppercase border-r last:border-r-0 border-zinc-200 dark:border-zinc-800/50">
-                      {String.fromCharCode(65 + colIdx)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {note.tableData.slice(0, 5).map((row, rIdx) => (
-                  <tr key={rIdx} className="border-b last:border-0 border-zinc-200/50 dark:border-zinc-800/50">
-                    <td className="p-1 text-center font-mono text-zinc-400 bg-zinc-100/30 dark:bg-zinc-905/20 border-r border-zinc-250 dark:border-zinc-800/50 font-bold">
-                      {rIdx + 1}
-                    </td>
-                    {row.map((cellValue, cIdx) => (
-                      <td key={cIdx} className="p-1 border-r last:border-r-0 border-zinc-200/50 dark:border-zinc-800/50 truncate max-w-[80px]">
-                        {cellValue || '-'}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {note.tableData.length > 5 && (
-              <div className="text-[9px] text-zinc-405 font-bold p-1 text-center border-t border-zinc-205 dark:border-zinc-800">
-                + {note.tableData.length - 5} {isAr ? 'صفوف إضافية...' : 'more rows...'}
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap break-words opacity-90 line-clamp-6">
-            {note.content}
-          </p>
-        )}
-      </div>
 
-      {/* Uploaded Images - Bottom Position */}
-      {note.imagePosition === 'bottom' && (
-        <div className="mt-3">
-          {renderImages()}
-        </div>
+          {/* Uploaded Images - Bottom Position */}
+          {note.imagePosition === 'bottom' && (
+            <div className="mt-3">
+              {renderImages()}
+            </div>
+          )}
+        </>
       )}
 
       {/* Tags and timestamp footer */}
@@ -420,6 +513,18 @@ export default function NoteCard({
                       ))}
                     </div>
                   )}
+
+                  {/* Lock Toggle */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateNote(note.id, { isLocked: !note.isLocked, updatedAt: Date.now() });
+                    }}
+                    className="p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-805/60 text-zinc-405 hover:text-amber-500 cursor-pointer"
+                    title={note.isLocked ? (isAr ? 'إلغاء قفل الملاحظة' : 'Unlock note') : (isAr ? 'قفل الملاحظة' : 'Lock note')}
+                  >
+                    <Lock className={`h-3.5 w-3.5 ${note.isLocked ? 'text-amber-500 fill-amber-500/20' : ''}`} />
+                  </button>
 
                   {/* Trash Button */}
                   <button
