@@ -88,6 +88,72 @@ ${content || ''}`,
   }
 });
 
+// 3. AI-Powered Proofreading & Writing Style Enhancer
+app.post("/api/ai/fix", async (req, res) => {
+  try {
+    const { content, title } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: "Content is required for fixing" });
+    }
+
+    if (!ai) {
+      return res.status(500).json({ 
+        error: "Gemini API Client is not initialized. Please configure it in Settings > Secrets." 
+      });
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: `You are an expert writing editor. Please refine, proofread, correct any typos, and enhance the phrasing of the following text while keeping its core style, tone, and original language (if written in Arabic, improve in elegant Arabic; if English, improve in English). Do not explain or talk; only return the corrected, improved text in its final form.
+Title: ${title || 'No Title'}
+Content:
+${content}`,
+    });
+
+    res.json({ result: response.text });
+  } catch (err: any) {
+    console.error("AI Proofread error:", err);
+    res.status(500).json({ error: err.message || "Failed to make Gemini API call" });
+  }
+});
+
+// 4. AI-Powered Smart Task Extraction
+app.post("/api/ai/extract-tasks", async (req, res) => {
+  try {
+    const { content, title } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: "Content is required for task extraction" });
+    }
+
+    if (!ai) {
+      return res.status(500).json({ 
+        error: "Gemini API Client is not initialized. Please configure it in Settings > Secrets." 
+      });
+    }
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: `You are a productivity task assistant. Please extract a list of direct, actionable checklist items (tasks) from the text below. Represent the tasks concisely in the exact language of the text. Format the output as a simple list with one task per line without numbers or prefix symbols.
+Title: ${title || 'No Title'}
+Content:
+${content}`,
+    });
+
+    // Parse tasks by splitting on newline
+    const tasks = (response.text || "").split("\n")
+      .map(item => item.trim())
+      .filter(item => item.length > 0 && !item.startsWith('-') && !item.startsWith('*') && !/^\d+\./.test(item));
+
+    // If parsing was strict and got zero items, let's try a simpler split
+    const finalTasks = tasks.length > 0 ? tasks : (response.text || "").split("\n").map(i => i.replace(/^[-*\d.\s]+/, '').trim()).filter(Boolean);
+
+    res.json({ result: finalTasks });
+  } catch (err: any) {
+    console.error("AI Tasks extraction error:", err);
+    res.status(500).json({ error: err.message || "Failed to extract tasks" });
+  }
+});
+
 // ----------------------------------------------------
 // WORKSPACE INGREGRES ROUTING (VITE / STATIC SERVING)
 // ----------------------------------------------------

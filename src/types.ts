@@ -32,7 +32,13 @@ export interface Note {
   createdAt: number;
   updatedAt: number;
   reminder?: string; // Optional: ISO date string for reminder
+  reminderRepeat?: 'none' | 'daily' | 'weekly' | 'monthly'; // Recurring reminder setting
   isLocked?: boolean; // Password protected note option
+  noteLockPIN?: string; // Password or PIN specifically for this note
+  pattern?: 'none' | 'dotted' | 'grid' | 'lined'; // Background pattern style
+  emoji?: string; // Customizable note cover emoji
+  imageCaptions?: { [key: number]: string }; // Captions index-mapped to note images
+  versions?: { content: string; title: string; updatedAt: number }[]; // Revision history (up to last 3 entries)
 }
 
 export interface Label {

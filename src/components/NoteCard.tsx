@@ -46,10 +46,13 @@ export default function NoteCard({
   const [typedPass, setTypedPass] = useState('');
   const [authError, setAuthError] = useState(false);
 
+  const isLocked = (note.isLocked || !!note.noteLockPIN) && !note.isTrashed;
+
   const handleVerifyPassword = (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (typedPass === (notesPassword || '1234')) {
+    const correctPin = note.noteLockPIN || notesPassword || '1234';
+    if (typedPass === correctPin) {
       setAuthError(false);
       setIsUnlocking(false);
       onSelect(note);
@@ -84,17 +87,24 @@ export default function NoteCard({
     }
 
     return (
-      <div className={wrapperClass} onClick={(e) => e.stopPropagation()}>
-        <img 
-          src={note.images[0]} 
-          alt="Attached notes media" 
-          className={imgClass}
-          referrerPolicy="no-referrer"
-        />
-        {note.images.length > 1 && (
-          <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/75 text-white text-[9px] font-mono font-bold">
-            +{note.images.length - 1} {isAr ? 'صور' : 'more'}
-          </span>
+      <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+        <div className={wrapperClass}>
+          <img 
+            src={note.images[0]} 
+            alt="Attached notes media" 
+            className={imgClass}
+            referrerPolicy="no-referrer"
+          />
+          {note.images.length > 1 && (
+            <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/75 text-white text-[9px] font-mono font-bold">
+              +{note.images.length - 1} {isAr ? 'صور' : 'more'}
+            </span>
+          )}
+        </div>
+        {note.imageCaptions && note.imageCaptions[0] && (
+          <p className="text-[10px] font-bold text-center opacity-75 italic text-zinc-500 dark:text-zinc-400">
+            {note.imageCaptions[0]}
+          </p>
         )}
       </div>
     );
@@ -156,22 +166,24 @@ export default function NoteCard({
     });
   };
 
+  const patternClass = note.pattern && note.pattern !== 'none' ? `pattern-${note.pattern}` : '';
+
   return (
     <div
       onClick={() => {
         if (note.isTrashed) return;
-        if (note.isLocked) {
+        if (isLocked) {
           setIsUnlocking(true);
         } else {
           onSelect(note);
         }
       }}
-      className={`group relative rounded-2xl border ${colorDef.bgClass} ${colorDef.borderClass} ${colorDef.textClass} p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-lg ${
+      className={`group relative rounded-2xl border ${colorDef.bgClass} ${colorDef.borderClass} ${colorDef.textClass} p-4 sm:p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-lg ${patternClass} ${
         note.isTrashed ? 'opacity-85 cursor-default' : 'cursor-pointer hover:scale-[1.01]'
       }`}
       dir={isAr ? 'rtl' : 'ltr'}
     >
-          {note.isLocked && !note.isTrashed ? (
+          {isLocked ? (
         <div className="flex-1 flex flex-col justify-center py-5 text-center">
           {isUnlocking ? (
             <form 
@@ -268,6 +280,12 @@ export default function NoteCard({
 
           {/* Note Main Body */}
           <div>
+            {note.emoji && (
+              <div className="text-2xl mb-2 select-none">
+                {note.emoji}
+              </div>
+            )}
+
             {/* Title row */}
             <div className="flex items-start justify-between gap-2 mb-2">
               {note.title ? (
@@ -298,6 +316,20 @@ export default function NoteCard({
             {/* Note content or checkboxes preview */}
             {note.isChecklist ? (
               <div className="space-y-1.5 mt-2">
+                {note.checklistItems && note.checklistItems.length > 0 && (
+                  <div className="mb-2 p-1.5 rounded-lg border border-black/5 dark:border-white/5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between text-[9px] font-bold text-zinc-40s dark:text-zinc-500 mb-1">
+                      <span>{isAr ? 'نسبة الإنجاز:' : 'Progress:'}</span>
+                      <span>{Math.round((note.checklistItems.filter(i => i.completed).length / note.checklistItems.length) * 100) || 0}%</span>
+                    </div>
+                    <div className="w-full h-1 bg-zinc-200/55 dark:bg-zinc-800/50 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                        style={{ width: `${(note.checklistItems.filter(i => i.completed).length / note.checklistItems.length) * 100 || 0}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 {note.checklistItems.slice(0, 5).map((item) => (
                   <div
                     key={item.id}
@@ -521,9 +553,9 @@ export default function NoteCard({
                       onUpdateNote(note.id, { isLocked: !note.isLocked, updatedAt: Date.now() });
                     }}
                     className="p-1.5 rounded-lg hover:bg-zinc-200/60 dark:hover:bg-zinc-805/60 text-zinc-405 hover:text-amber-500 cursor-pointer"
-                    title={note.isLocked ? (isAr ? 'إلغاء قفل الملاحظة' : 'Unlock note') : (isAr ? 'قفل الملاحظة' : 'Lock note')}
+                    title={isLocked ? (isAr ? 'إلغاء قفل الملاحظة' : 'Unlock note') : (isAr ? 'قفل الملاحظة' : 'Lock note')}
                   >
-                    <Lock className={`h-3.5 w-3.5 ${note.isLocked ? 'text-amber-500 fill-amber-500/20' : ''}`} />
+                    <Lock className={`h-3.5 w-3.5 ${isLocked ? 'text-amber-500 fill-amber-500/20' : ''}`} />
                   </button>
 
                   {/* Trash Button */}

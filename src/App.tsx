@@ -89,32 +89,70 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   
   // Core config states
-  const [viewLayout, setViewLayout] = useState<'grid' | 'list'>('grid');
-  const [isAr, setIsAr] = useState<boolean>(true); // default Arabic
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('dark');
+  const [viewLayout, setViewLayout] = useState<'grid' | 'list'>(() => {
+    const saved = localStorage.getItem('keep_layout');
+    return (saved as 'grid' | 'list') || 'grid';
+  });
+  const [isAr, setIsAr] = useState<boolean>(() => {
+    const saved = localStorage.getItem('keep_language');
+    if (saved === 'en') return false;
+    return true; // default Arabic
+  });
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
+    const saved = localStorage.getItem('keep_theme') as 'light' | 'dark' | 'system' | null;
+    return saved || 'dark';
+  });
 
   // Custom typography states
-  const [fontFamily, setFontFamily] = useState<string>('cairo');
-  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg' | 'xl'>('base');
+  const [fontFamily, setFontFamily] = useState<string>(() => {
+    return localStorage.getItem('keep_font_family') || 'cairo';
+  });
+  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg' | 'xl'>(() => {
+    const saved = localStorage.getItem('keep_font_size') as 'sm' | 'base' | 'lg' | 'xl' | null;
+    return saved || 'base';
+  });
 
   // Security: PIN lock for whole application
-  const [appLockEnabled, setAppLockEnabled] = useState<boolean>(false);
-  const [appLockPIN, setAppLockPIN] = useState<string>('1234');
-  const [isAppLocked, setIsAppLocked] = useState<boolean>(false);
+  const [appLockEnabled, setAppLockEnabled] = useState<boolean>(() => {
+    return localStorage.getItem('keep_app_lock_enabled') === 'true';
+  });
+  const [appLockPIN, setAppLockPIN] = useState<string>(() => {
+    return localStorage.getItem('keep_app_lock_pin') || '1234';
+  });
+  const [isAppLocked, setIsAppLocked] = useState<boolean>(() => {
+    const enabled = localStorage.getItem('keep_app_lock_enabled') === 'true';
+    const pin = localStorage.getItem('keep_app_lock_pin') || '1234';
+    return enabled && !!pin;
+  });
 
   // Private locked notes password
-  const [notesPassword, setNotesPassword] = useState<string>('1234');
+  const [notesPassword, setNotesPassword] = useState<string>(() => {
+    return localStorage.getItem('keep_notes_password') || '1234';
+  });
 
   // Trash & Reminders Auto delete config
-  const [autoDeleteDays, setAutoDeleteDays] = useState<number>(30);
+  const [autoDeleteDays, setAutoDeleteDays] = useState<number>(() => {
+    const saved = localStorage.getItem('keep_auto_delete_days');
+    return saved ? parseInt(saved, 10) : 30;
+  });
 
   // Reminder alarm style selection
-  const [reminderAlertStyle, setReminderAlertStyle] = useState<'chime' | 'beep' | 'silent'>('beep');
+  const [reminderAlertStyle, setReminderAlertStyle] = useState<'chime' | 'beep' | 'silent'>(() => {
+    const saved = localStorage.getItem('keep_reminder_alert_style') as 'chime' | 'beep' | 'silent' | null;
+    return saved || 'beep';
+  });
 
   // Simulated Google Cloud Drive sync stats
-  const [isSyncConnected, setIsSyncConnected] = useState<boolean>(false);
-  const [syncEmail, setSyncEmail] = useState<string>('ae90op@gmail.com');
-  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  const [isSyncConnected, setIsSyncConnected] = useState<boolean>(() => {
+    return localStorage.getItem('keep_sync_connected') === 'true';
+  });
+  const [syncEmail, setSyncEmail] = useState<string>(() => {
+    return localStorage.getItem('keep_sync_email') || 'ae90op@gmail.com';
+  });
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(() => {
+    const saved = localStorage.getItem('keep_last_sync_time');
+    return saved ? parseInt(saved, 10) : null;
+  });
 
   // Lock Screen Input state
   const [enteredPIN, setEnteredPIN] = useState('');
@@ -132,20 +170,33 @@ export default function App() {
 
   // Synchronize CSS Class with Theme parameter
   useEffect(() => {
-    let activeTheme: 'light' | 'dark' = 'dark';
-    if (theme === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      activeTheme = prefersDark ? 'dark' : 'light';
-    } else {
-      activeTheme = theme === 'dark' ? 'dark' : 'light';
-    }
+    const updateTheme = () => {
+      let activeTheme: 'light' | 'dark' = 'dark';
+      if (theme === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        activeTheme = prefersDark ? 'dark' : 'light';
+      } else {
+        activeTheme = theme === 'dark' ? 'dark' : 'light';
+      }
 
-    if (activeTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+      if (activeTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = 'dark';
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.style.colorScheme = 'light';
+      }
+    };
+
+    updateTheme();
     localStorage.setItem('keep_theme', theme);
+
+    if (theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = () => updateTheme();
+      mediaQuery.addEventListener('change', listener);
+      return () => mediaQuery.removeEventListener('change', listener);
+    }
   }, [theme]);
 
   // Persistent savers
@@ -234,14 +285,6 @@ export default function App() {
     const savedNotes = localStorage.getItem('keep_notes');
     const savedLayout = localStorage.getItem('keep_layout');
     const savedLanguage = localStorage.getItem('keep_language');
-    const savedTheme = localStorage.getItem('keep_theme') as 'light' | 'dark' | null;
-
-    if (savedTheme) {
-      setTheme(savedTheme);
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setTheme(prefersDark ? 'dark' : 'light');
-    }
 
     // Parse labels
     let parsedLabels: Label[] = [];
@@ -540,19 +583,19 @@ export default function App() {
       case 'tajawal': return 'font-tajawal';
       case 'elmessiri': return 'font-elmessiri';
       case 'almarai': return 'font-almarai';
-      case 'inter': return 'font-sans';
-      case 'mono': return 'font-mono';
+      case 'inter': return 'font-inter';
+      case 'mono-jb': return 'font-mono-jb';
       default: return 'font-cairo';
     }
   };
 
   const getFontSizeClass = () => {
     switch (fontSize) {
-      case 'sm': return 'text-xs md:text-sm';
-      case 'base': return 'text-sm md:text-base';
-      case 'lg': return 'text-base md:text-lg';
-      case 'xl': return 'text-lg md:text-xl';
-      default: return 'text-sm';
+      case 'sm': return 'font-size-sm';
+      case 'base': return 'font-size-base';
+      case 'lg': return 'font-size-lg';
+      case 'xl': return 'font-size-xl';
+      default: return 'font-size-base';
     }
   };
 

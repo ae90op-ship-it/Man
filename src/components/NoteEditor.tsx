@@ -16,7 +16,13 @@ import {
   Type,
   LayoutGrid,
   Brain,
-  Sparkles
+  Sparkles,
+  Download,
+  History,
+  Smile,
+  Lock,
+  BookOpen,
+  Clock
 } from 'lucide-react';
 import { Note, Label, NOTE_COLORS, ChecklistItem, DrawingPath } from '../types';
 import { compressAndResizeImage, generateId } from '../utils';
@@ -63,6 +69,22 @@ export default function NoteEditor({
     ["", "", ""],
     ["", "", ""]
   ]);
+
+  // Premium properties states
+  const [pattern, setPattern] = useState<'none' | 'dotted' | 'grid' | 'lined'>('none');
+  const [emoji, setEmoji] = useState('');
+  const [imageCaptions, setImageCaptions] = useState<{ [key: number]: string }>({});
+  const [noteLockPIN, setNoteLockPIN] = useState('');
+  const [reminder, setReminder] = useState('');
+  const [reminderRepeat, setReminderRepeat] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  const [isZenMode, setIsZenMode] = useState(false);
+  const [versions, setVersions] = useState<{ content: string; title: string; updatedAt: number }[]>([]);
+  const [lastAutosave, setLastAutosave] = useState<string>('');
+
+  // Submenus display triggers
+  const [showPatternMenu, setShowPatternMenu] = useState(false);
+  const [showEmojiMenu, setShowEmojiMenu] = useState(false);
+  const [showReminderForm, setShowReminderForm] = useState(false);
   
   // Custom whiteboard drawing layers
   const [drawingData, setDrawingData] = useState<string | null>(null);
@@ -82,6 +104,7 @@ export default function NoteEditor({
   // Refs for tracking focus
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const checklistRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   const colorDef = NOTE_COLORS.find(c => c.id === color) || NOTE_COLORS[0];
@@ -109,6 +132,14 @@ export default function NoteEditor({
         ["", "", ""],
         ["", "", ""]
       ]);
+      setPattern(note.pattern || 'none');
+      setEmoji(note.emoji || '');
+      setImageCaptions(note.imageCaptions || {});
+      setNoteLockPIN(note.noteLockPIN || '');
+      setReminder(note.reminder || '');
+      setReminderRepeat(note.reminderRepeat || 'none');
+      setVersions(note.versions || []);
+      setLastAutosave(note.updatedAt ? new Date(note.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
       setIsExpanded(true);
       if (startWithWhiteboard) {
         setIsWhiteboardOpen(true);
@@ -138,6 +169,14 @@ export default function NoteEditor({
         ["", "", ""],
         ["", "", ""]
       ]);
+      setPattern('none');
+      setEmoji('');
+      setImageCaptions({});
+      setNoteLockPIN('');
+      setReminder('');
+      setReminderRepeat('none');
+      setVersions([]);
+      setLastAutosave('');
       setIsWhiteboardOpen(startWithWhiteboard || false);
       setIsTableModalOpen(startWithTable || false);
       if (!isModal) {
@@ -178,6 +217,36 @@ export default function NoteEditor({
       return;
     }
 
+    // Auto-extract hashtags (e.g., #عمل or #أفكار) and classify under corresponding label IDs
+    const wordsText = title + " " + content + " " + checklistItems.map(i => i.text).join(" ");
+    const hashtagRegex = /#([\w\u0600-\u06FF]+)/g;
+    const extractedHashtags: string[] = [];
+    let match;
+    while ((match = hashtagRegex.exec(wordsText)) !== null) {
+      extractedHashtags.push(match[1]);
+    }
+
+    const updatedLabels = [...noteLabels];
+    extractedHashtags.forEach(tag => {
+      // Find a tag matching the name (case-insensitive)
+      const matchedLabel = labels.find(l => l.name.toLowerCase().includes(tag.toLowerCase()));
+      if (matchedLabel && !updatedLabels.includes(matchedLabel.id)) {
+        updatedLabels.push(matchedLabel.id);
+      }
+    });
+
+    // Version Control Tracker: store last 3 changes locally
+    let updatedVersions = note?.versions ? [...note.versions] : [];
+    if (note && (note.title !== title || note.content !== content)) {
+      const currentVersionNode = {
+        title: note.title || '',
+        content: note.content || '',
+        updatedAt: note.updatedAt || Date.now()
+      };
+      // Keep only most recent 3 versions, remove older ones
+      updatedVersions = [currentVersionNode, ...updatedVersions].slice(0, 3);
+    }
+
     onSave({
       title: title.trim(),
       content: activeTable ? '' : isChecklist ? '' : content.trim(),
@@ -190,12 +259,19 @@ export default function NoteEditor({
       color,
       isPinned,
       isArchived,
-      labels: noteLabels,
+      labels: updatedLabels,
       images,
       imagePosition,
       imageSize,
       drawingData,
       drawingPaths,
+      pattern,
+      emoji,
+      imageCaptions,
+      noteLockPIN,
+      reminder: reminder || undefined,
+      reminderRepeat,
+      versions: updatedVersions,
       updatedAt: Date.now()
     });
 
@@ -214,6 +290,14 @@ export default function NoteEditor({
       setImageSize('medium');
       setDrawingData(null);
       setDrawingPaths([]);
+      setPattern('none');
+      setEmoji('');
+      setImageCaptions({});
+      setNoteLockPIN('');
+      setReminder('');
+      setReminderRepeat('none');
+      setVersions([]);
+      setLastAutosave('');
       setIsTable(false);
       setTableData([
         ["", "", ""],
@@ -410,6 +494,124 @@ export default function NoteEditor({
     });
   };
 
+  // Word and character count calculation
+  const charCount = content.length;
+  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+
+  // Insert formatting tokens around selected text inside the textarea
+  const insertTextAtCursor = (prefix: string, suffix: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const currentText = textarea.value;
+    const selectedText = currentText.substring(start, end);
+    const replacement = prefix + (selectedText || "") + suffix;
+    const newContent = currentText.substring(0, start) + replacement + currentText.substring(end);
+    setContent(newContent);
+    
+    // Set selection range beautifully after insertion
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + prefix.length, start + prefix.length + (selectedText || "").length);
+    }, 15);
+  };
+
+  // Auto copy content to clipboard
+  const [copied, setCopied] = useState(false);
+  const handleCopyToClipboard = () => {
+    let textToCopy = `Title: ${title || 'Untitled'}\n`;
+    textToCopy += `======================\n`;
+    textToCopy += getNoteTextBody();
+    navigator.clipboard.writeText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Export note to markdown file
+  const handleExportMarkdown = () => {
+    let fileText = `# ${title || 'Untitled'}\n\n`;
+    if (reminder) {
+      fileText += `> 📅 Reminder: ${new Date(reminder).toLocaleString()}\n\n`;
+    }
+    fileText += getNoteTextBody();
+    const blob = new Blob([fileText], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${title || 'note'}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Premium AI proofreader and style optimizer
+  const handleAiProofread = async () => {
+    if (!content.trim()) return;
+    setIsAiLoading(true);
+    setAiError(null);
+    try {
+      const response = await fetch('/api/ai/fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content })
+      });
+      if (!response.ok) {
+        const errDetails = await response.json().catch(() => ({}));
+        throw new Error(errDetails.error || 'Failed to proofread');
+      }
+      const data = await response.json();
+      setContent(data.result);
+      setLastAutosave(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    } catch (err: any) {
+      setAiError(isAr ? 'عذراً، فشل تصحيح النص عبر الذكاء الاصطناعي.' : 'AI text proofread failed.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // Premium task checklist extractor
+  const handleAiExtractTasks = async () => {
+    if (!content.trim()) return;
+    setIsAiLoading(true);
+    setAiError(null);
+    try {
+      const response = await fetch('/api/ai/extract-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content })
+      });
+      if (!response.ok) {
+        const errDetails = await response.json().catch(() => ({}));
+        throw new Error(errDetails.error || 'Failed to extract tasks');
+      }
+      const data = await response.json();
+      if (Array.isArray(data.result) && data.result.length > 0) {
+        const extractedItems = data.result.map((taskText: string) => ({
+          id: generateId(),
+          text: taskText,
+          completed: false
+        }));
+        setIsChecklist(true);
+        setIsTable(false);
+        setChecklistItems(extractedItems);
+        setContent('');
+      } else {
+        setAiError(isAr ? 'لم يجد الذكاء الاصطناعي مهام محددة لاستخراجها.' : 'AI could not detect actionable tasks.');
+      }
+    } catch (err: any) {
+      setAiError(isAr ? 'عذراً، فشل استخراج المهام.' : 'AI task extraction failed.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // Revision rollback
+  const handleRollbackVersion = (prevVersion: { title: string; content: string }) => {
+    setTitle(prevVersion.title);
+    setContent(prevVersion.content);
+  };
+
   // Helper to gather note contents for AI tasks
   const getNoteTextBody = () => {
     if (isChecklist) {
@@ -488,6 +690,41 @@ export default function NoteEditor({
 
   // Render the inner editor inputs
   const renderEditorBody = () => {
+    // If Zen Focus Mode is active, render a clean, zero-distraction layout and skip everything else
+    if (isZenMode) {
+      return (
+        <div className="fixed inset-0 bg-stone-50 dark:bg-stone-950 z-55 flex flex-col items-center justify-center p-6 transition-all duration-300 animate-in fade-in duration-200" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-xl flex flex-col justify-between h-full max-h-[85vh] gap-4">
+            <div className="flex items-center justify-between border-b border-zinc-200/40 pb-2">
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-500 animate-pulse flex items-center gap-1.5">
+                ● ✍️ {isAr ? 'وضع التركيز الهادئ (اضغط لكتابة سلسلة أفكارك)' : 'Zen Focus Mode (let your ideas flow...)'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsZenMode(false)}
+                className="px-3.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 rounded-xl text-[10px] font-black cursor-pointer shadow-md transition-all active:scale-95"
+              >
+                {isAr ? 'إنهاء وضع التركيز' : 'Exit Focus'}
+              </button>
+            </div>
+            
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder={isAr ? 'تدفّق بأفكارك هنا دون مشتتات...' : 'Let your stream of thoughts flow here...'}
+              className="w-full text-sm font-semibold focus:outline-hidden bg-transparent resize-none placeholder-zinc-400 dark:placeholder-zinc-600 leading-relaxed scrollbar-none h-full"
+            />
+            
+            <div className="flex items-center justify-between text-[11px] font-mono text-zinc-400 dark:text-zinc-500 border-t border-zinc-250/20 pt-2 font-bold select-none">
+              <span>{isAr ? `الحروف: ${charCount}` : `Chars: ${charCount}`}</span>
+              <span>{isAr ? `الكلمات: ${wordCount}` : `Words: ${wordCount}`}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const uncompletedItems = checklistItems.filter(item => !item.completed);
     const completedItems = checklistItems.filter(item => item.completed);
 
@@ -503,24 +740,32 @@ export default function NoteEditor({
         imgHeightClass = 'max-h-72 object-cover';
       }
 
+      const handleUpdateCaption = (idx: number, text: string) => {
+        setImageCaptions(prev => {
+          const next = { ...prev };
+          next[idx] = text;
+          return next;
+        });
+      };
+
       return (
-        <div className="space-y-2 select-none" onClick={(e) => e.stopPropagation()}>
+        <div className="space-y-3 select-none" onClick={(e) => e.stopPropagation()}>
           {/* Main images layout controls */}
-          <div className="flex flex-wrap items-center gap-2 p-2 bg-zinc-100/50 dark:bg-zinc-800/40 border border-zinc-200/50 dark:border-zinc-800/50 rounded-xl text-[10px] font-bold">
+          <div className="flex flex-wrap items-center gap-2 p-2 bg-zinc-100/50 dark:bg-zinc-800/40 border border-zinc-200/50 dark:border-zinc-800/55 rounded-xl text-[10px] font-bold">
             <span className="text-zinc-550 dark:text-zinc-400">{isAr ? 'تنسيق حجم وموضع الصورة:' : 'Image layout & scale:'}</span>
             
             <div className="flex items-center gap-0.5 bg-white dark:bg-zinc-950 rounded-lg p-0.5 border border-zinc-200 dark:border-zinc-850">
               <button
                 type="button"
                 onClick={() => setImagePosition('top')}
-                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imagePosition === 'top' ? 'bg-amber-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
+                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imagePosition === 'top' ? 'bg-amber-500 text-white' : 'text-zinc-650 dark:text-zinc-405 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
               >
                 {isAr ? 'أعلى' : 'Top'}
               </button>
               <button
                 type="button"
                 onClick={() => setImagePosition('bottom')}
-                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imagePosition === 'bottom' ? 'bg-amber-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
+                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imagePosition === 'bottom' ? 'bg-amber-500 text-white' : 'text-zinc-650 dark:text-zinc-405 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
               >
                 {isAr ? 'أسفل' : 'Bottom'}
               </button>
@@ -530,45 +775,55 @@ export default function NoteEditor({
               <button
                 type="button"
                 onClick={() => setImageSize('small')}
-                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imageSize === 'small' ? 'bg-amber-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
+                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imageSize === 'small' ? 'bg-amber-500 text-white' : 'text-zinc-650 dark:text-zinc-405 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
               >
                 {isAr ? 'صغير' : 'Small'}
               </button>
               <button
                 type="button"
                 onClick={() => setImageSize('medium')}
-                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imageSize === 'medium' ? 'bg-amber-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
+                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imageSize === 'medium' ? 'bg-amber-500 text-white' : 'text-zinc-650 dark:text-zinc-405 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
               >
                 {isAr ? 'متوسط' : 'Medium'}
               </button>
               <button
                 type="button"
                 onClick={() => setImageSize('large')}
-                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imageSize === 'large' ? 'bg-amber-500 text-white' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
+                className={`px-2 py-0.5 rounded text-[10px] cursor-pointer font-bold transition-all ${imageSize === 'large' ? 'bg-amber-500 text-white' : 'text-zinc-650 dark:text-zinc-405 hover:bg-zinc-100 dark:hover:bg-zinc-900'}`}
               >
                 {isAr ? 'كبير' : 'Large'}
               </button>
             </div>
           </div>
 
-          {/* Grid display */}
-          <div className={`grid gap-2 ${images.length === 1 ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3'}`}>
+          {/* Grid display with specific captions input per picture */}
+          <div className={`grid gap-3.5 ${images.length === 1 ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3'}`}>
             {images.map((img, idx) => (
-              <div key={idx} className={`relative rounded-xl overflow-hidden group/img bg-zinc-100/30 dark:bg-zinc-950/30 border border-zinc-200/40 ${wrapperSizeClass}`}>
-                <img 
-                  src={img} 
-                  alt="User uploaded attachment preview" 
-                  className={`w-full ${imgHeightClass}`}
-                  referrerPolicy="no-referrer"
+              <div key={idx} className="flex flex-col gap-1.5">
+                <div className={`relative rounded-xl overflow-hidden group/img bg-zinc-100/30 dark:bg-zinc-950/30 border border-zinc-200/40 ${wrapperSizeClass}`}>
+                  <img 
+                    src={img} 
+                    alt="User uploaded attachment preview" 
+                    className={`w-full ${imgHeightClass}`}
+                    referrerPolicy="no-referrer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeImage(idx)}
+                    className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 hover:bg-black text-white transition-opacity cursor-pointer shadow-sm z-10"
+                    title={isAr ? 'إزالة الصورة' : 'Remove image'}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                {/* Specific caption edit box */}
+                <input
+                  type="text"
+                  value={imageCaptions[idx] || ''}
+                  onChange={(e) => handleUpdateCaption(idx, e.target.value)}
+                  placeholder={isAr ? 'اكتب تعليقاً على الصورة...' : 'Add a caption...'}
+                  className="w-full text-[10.5px] font-bold py-1 px-1.5 bg-zinc-500/5 dark:bg-white/5 border border-transparent focus:border-zinc-300 dark:focus:border-zinc-750 focus:outline-hidden rounded text-center text-zinc-700 dark:text-zinc-300 transition-colors"
                 />
-                <button
-                  type="button"
-                  onClick={() => removeImage(idx)}
-                  className="absolute top-2 right-2 p-1.5 rounded-full bg-black/75 hover:bg-black text-white transition-opacity cursor-pointer shadow-sm z-10"
-                  title={isAr ? 'إزالة الصورة' : 'Remove image'}
-                >
-                  <X className="h-3 w-3" />
-                </button>
               </div>
             ))}
           </div>
@@ -577,11 +832,31 @@ export default function NoteEditor({
     };
 
     return (
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-2.5 relative select-text">
+        {/* Transparent background pattern overlay inside editor canvas */}
+        {pattern !== 'none' && (
+          <div className={`absolute inset-0 opacity-[0.09] dark:opacity-[0.04] pointer-events-none rounded-2xl pattern-${pattern}`} />
+        )}
+
+        {/* Custom Custom Emoji / Cover Icon Badge */}
+        {emoji && (
+          <div className="flex items-center gap-1.5 pb-1">
+            <div className="flex items-center gap-2 bg-zinc-400/15 dark:bg-zinc-850/30 p-1.5 px-3 rounded-full select-none text-xs font-black w-max border border-zinc-300/10">
+              <span className="text-xl leading-none">{emoji}</span>
+              <button
+                type="button"
+                onClick={() => setEmoji('')}
+                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 font-extrabold cursor-pointer"
+                title={isAr ? 'إزالة الرمز' : 'Remove Emoji'}
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* Render media layout previews */}
         <div className="space-y-4">
-          {/* Main attached image catalog sliders */}
           {imagePosition !== 'bottom' && renderEditorImages()}
 
           {/* Render Vector Whiteboard Drawing */}
@@ -596,10 +871,10 @@ export default function NoteEditor({
               <div className="absolute top-2 right-2 flex gap-1.5">
                 <button
                   onClick={() => setIsWhiteboardOpen(true)}
-                  className="p-1 px-2 text-xs bg-zinc-900/80 hover:bg-zinc-900 text-white rounded-md flex items-center gap-1 cursor-pointer"
+                  className="p-1 px-2 text-xs bg-zinc-900/80 hover:bg-zinc-900 text-white rounded-md flex items-center gap-1 cursor-pointer font-bold"
                 >
                   <Paintbrush className="h-3 w-3" />
-                  <span>{isAr ? 'تعديل الرسم' : 'Edit Script'}</span>
+                  <span>{isAr ? 'تعديل الرسم' : 'Edit Sketch'}</span>
                 </button>
                 <button
                   onClick={deleteDrawing}
@@ -620,24 +895,125 @@ export default function NoteEditor({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             disabled={isAiLoading}
-            placeholder={isAr ? 'العنوان' : 'Title'}
+            placeholder={isAr ? 'العنوان الكاتب...' : 'Title...'}
             className="w-full text-base font-extrabold focus:outline-hidden placeholder-zinc-400 dark:placeholder-zinc-600 bg-transparent py-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
           />
 
-          <button
-            onClick={() => setIsPinned(!isPinned)}
-            className={`p-2 rounded-lg cursor-pointer ${
-              isPinned ? 'text-amber-500 hover:bg-amber-100/20' : 'text-zinc-400 hover:bg-zinc-100/20'
-            }`}
-            title={isPinned ? (isAr ? 'إلغاء التثبيت' : 'Unpin note') : (isAr ? 'تثبيت الملاحظة' : 'Pin note')}
-          >
-            <Pin className={`h-4.5 w-4.5 transform ${isPinned ? 'rotate-45 fill-amber-500' : ''}`} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Zen Mode focus Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsZenMode(true)}
+              className="p-2 rounded-lg cursor-pointer text-zinc-400 hover:bg-zinc-100/20 hover:text-indigo-500 transition-all"
+              title={isAr ? 'تفعيل وضع التركيز الهادئ' : 'Zen Focus Mode'}
+            >
+              <BookOpen className="h-4.5 w-4.5" />
+            </button>
+
+            {/* Pin note toggle */}
+            <button
+              onClick={() => setIsPinned(!isPinned)}
+              className={`p-2 rounded-lg cursor-pointer ${
+                isPinned ? 'text-amber-500 hover:bg-amber-100/20' : 'text-zinc-400 hover:bg-zinc-100/20'
+              }`}
+              title={isPinned ? (isAr ? 'إلغاء التثبيت' : 'Unpin note') : (isAr ? 'تثبيت الملاحظة' : 'Pin note')}
+            >
+              <Pin className={`h-4.5 w-4.5 transform ${isPinned ? 'rotate-45 fill-amber-500' : ''}`} />
+            </button>
+          </div>
         </div>
 
-        {/* Notes Writing Node: Text or Checkbox list */}
+        {/* Rich Structure text toolbars directly above inputs */}
+        {!isChecklist && !isTable && (
+          <div className="flex flex-wrap items-center gap-1 p-1 bg-zinc-150/45 dark:bg-zinc-900/40 rounded-xl border border-zinc-200/30 w-max select-none" dir={isAr ? 'rtl' : 'ltr'}>
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('**', '**')}
+              className="p-1 px-2.5 rounded-lg text-xs font-black hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'خط عريض' : 'Bold'}
+            >
+              B
+            </button>
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('*', '*')}
+              className="p-1 px-2.5 rounded-lg text-xs font-black italic hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'خط مائل' : 'Italic'}
+            >
+              I
+            </button>
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('<u>', '</u>')}
+              className="p-1 px-2.5 rounded-lg text-xs font-black underline hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'تسطير' : 'Underline'}
+            >
+              U
+            </button>
+            <span className="h-4 w-px bg-zinc-250 dark:bg-zinc-800 mx-1" />
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('# ', '')}
+              className="p-1 px-1.5 rounded-lg text-[10.5px] font-black hover:bg-zinc-200 dark:hover:bg-zinc-805 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'عنوان عريض H1' : 'Heading 1'}
+            >
+              H1
+            </button>
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('## ', '')}
+              className="p-1 px-1.5 rounded-lg text-[10.5px] font-black hover:bg-zinc-200 dark:hover:bg-zinc-805 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'عنوان فرعي H2' : 'Heading 2'}
+            >
+              H2
+            </button>
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('### ', '')}
+              className="p-1 px-1.5 rounded-lg text-[10.5px] font-black hover:bg-zinc-200 dark:hover:bg-zinc-805 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'عنوان صغير H3' : 'Heading 3'}
+            >
+              H3
+            </button>
+            <span className="h-4 w-px bg-zinc-250 dark:bg-zinc-800 mx-1" />
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('- ', '')}
+              className="p-1 px-2 rounded-lg text-[10.5px] font-extrabold hover:bg-zinc-200 dark:hover:bg-zinc-805 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'قائمة نقطية' : 'Bulleted list'}
+            >
+              • List
+            </button>
+            <button
+              type="button"
+              onClick={() => insertTextAtCursor('\n1. ', '')}
+              className="p-1 px-2 rounded-lg text-[10.5px] font-extrabold hover:bg-zinc-200 dark:hover:bg-zinc-805 text-zinc-700 dark:text-zinc-300 cursor-pointer"
+              title={isAr ? 'قائمة مرقمة' : 'Numbered list'}
+            >
+              1. List
+            </button>
+          </div>
+        )}
+
+        {/* Notes Writing Node: Text, Checkbox list, or spreadsheets */}
         {isChecklist ? (
           <div className="space-y-2 mt-1">
+            {/* Checklist dynamic progress bar in-editor */}
+            {checklistItems.length > 0 && (
+              <div className="px-1 py-1 select-none">
+                <div className="flex items-center justify-between text-[10px] text-zinc-500 font-extrabold mb-1">
+                  <span>{isAr ? 'نسبة إنجاز المهام:' : 'Checklist completed:'}</span>
+                  <span>{Math.round((checklistItems.filter(i => i.completed).length / checklistItems.length) * 100) || 0}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-zinc-200/50 dark:bg-zinc-800/40 rounded-full overflow-hidden border border-zinc-250/10">
+                  <div 
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                    style={{ width: `${(checklistItems.filter(i => i.completed).length / checklistItems.length) * 100 || 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Uncompleted Items */}
             <div className="space-y-1.5">
               {uncompletedItems.map((item, idx) => {
@@ -697,7 +1073,7 @@ export default function NoteEditor({
                       type="text"
                       value={item.text}
                       disabled
-                      className="flex-1 text-xs font-medium bg-transparent line-through text-zinc-40s dark:text-zinc-505 py-1"
+                      className="flex-1 text-xs font-medium bg-transparent line-through text-zinc-400 dark:text-zinc-505 py-1"
                     />
                     <button
                       onClick={() => deleteChecklistItem(item.id)}
@@ -711,18 +1087,18 @@ export default function NoteEditor({
             )}
           </div>
         ) : isTable ? (
-          /* High quality spreadsheet preview inside editor with full-screen edit button */
+          /* High quality spreadsheet preview inside editor inside modal */
           <div className="space-y-3 my-2" onClick={(e) => e.stopPropagation()}>
             <div className="overflow-x-auto border border-zinc-200 dark:border-zinc-800 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 p-2.5">
               <table className="w-full text-xs font-semibold border-collapse">
                 <thead>
                   <tr className="bg-zinc-150/70 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800/80">
-                    <th className="p-1.5 text-center text-zinc-400 font-mono w-10 border-r border-zinc-200 dark:border-zinc-800/40">#</th>
-                    {tableData[0]?.map((_, colIdx) => (
-                      <th key={colIdx} className="p-1.5 text-center text-zinc-500 font-mono uppercase border-r last:border-r-0 border-zinc-200 dark:border-zinc-850">
-                        {String.fromCharCode(65 + colIdx)}
-                      </th>
-                    ))}
+                     <th className="p-1.5 text-center text-zinc-400 font-mono w-10 border-r border-zinc-200 dark:border-zinc-800/40">#</th>
+                     {tableData[0]?.map((_, colIdx) => (
+                       <th key={colIdx} className="p-1.5 text-center text-zinc-500 font-mono uppercase border-r last:border-r-0 border-zinc-200 dark:border-zinc-850">
+                         {String.fromCharCode(65 + colIdx)}
+                       </th>
+                     ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -757,16 +1133,56 @@ export default function NoteEditor({
             </button>
           </div>
         ) : (
-          /* Auto-growing Text area */
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            disabled={isAiLoading}
-            placeholder={isAr ? 'اكتب ملاحظتك هنا...' : 'Take a note...'}
-            rows={isModal ? 8 : 3}
-            className="w-full text-xs font-medium focus:outline-hidden bg-transparent resize-none placeholder-zinc-400 dark:placeholder-zinc-650 leading-relaxed scrollbar-none disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ minHeight: isModal ? '180px' : '80px' }}
-          />
+          /* Auto-growing Text area connected with core ref for cursor helpers */
+          <div className="flex flex-col gap-1.5">
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              disabled={isAiLoading}
+              placeholder={isAr ? 'اكتب ملاحظتك هنا...' : 'Take a note...'}
+              rows={isModal ? 8 : 3}
+              className="w-full text-xs font-medium focus:outline-hidden bg-transparent resize-none placeholder-zinc-400 dark:placeholder-zinc-650 leading-relaxed scrollbar-none disabled:opacity-50 disabled:cursor-not-allowed z-10"
+              style={{ minHeight: isModal ? '180px' : '80px' }}
+            />
+
+            {/* Premium counters and autosave log indicator */}
+            <div className="flex flex-wrap items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-550 font-mono font-bold mt-2 px-1 border-t border-zinc-250/20 pt-2 shrink-0 select-none z-10">
+              <div className="flex items-center gap-3">
+                <span>{isAr ? `الحروف: ${charCount}` : `Chars: ${charCount}`}</span>
+                <span>{isAr ? `الكلمات: ${wordCount}` : `Words: ${wordCount}`}</span>
+                {lastAutosave && (
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5 animate-pulse">
+                    ● {isAr ? `حفظ تلقائي: ${lastAutosave}` : `Auto-saved: ${lastAutosave}`}
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-1.5">
+                {/* Export Button */}
+                <button
+                  type="button"
+                  onClick={handleExportMarkdown}
+                  className="px-2 py-0.5 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800/65 transition-colors flex items-center gap-1 text-[9px] cursor-pointer font-extrabold text-zinc-500 dark:text-zinc-400"
+                  title={isAr ? 'تصدير كمستند Markdown' : 'Export as MD'}
+                >
+                  <Download className="h-3 w-3 text-zinc-400" />
+                  <span>{isAr ? 'تصدير' : 'Export'}</span>
+                </button>
+
+                {/* Copy Clipboard button */}
+                <button
+                  type="button"
+                  onClick={handleCopyToClipboard}
+                  className="px-2 py-0.5 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800/65 transition-colors flex items-center gap-1 text-[9px] cursor-pointer font-extrabold text-zinc-500 dark:text-zinc-400"
+                  title={isAr ? 'نسخ محتوى الملاحظة' : 'Copy markdown content'}
+                >
+                  <CheckSquare className="h-3 w-3 text-zinc-400" />
+                  <span>{copied ? (isAr ? 'تم النسخ!' : 'Copied!') : (isAr ? 'نسخ' : 'Copy')}</span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Selected labels chips tags list inside modal */}
@@ -776,7 +1192,7 @@ export default function NoteEditor({
               <span
                 key={l.id}
                 onClick={() => toggleLabel(l.id)}
-                className="group select-none text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/60 dark:bg-zinc-800/50 text-zinc-700 dark:text-zinc-300 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-955/20 dark:hover:text-rose-450 border border-zinc-200/20 cursor-pointer flex items-center gap-1 transition-all"
+                className="group select-none text-[9.5px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/60 dark:bg-zinc-800/50 text-zinc-700 dark:text-zinc-300 hover:bg-rose-55/40 hover:text-rose-600 dark:hover:bg-rose-955/20 dark:hover:text-rose-450 border border-zinc-200/20 cursor-pointer flex items-center gap-1 transition-all"
                 title={isAr ? 'اضغط للإزالة' : 'Click to delete tag'}
               >
                 <span>{l.name}</span>
@@ -788,6 +1204,33 @@ export default function NoteEditor({
 
         {/* Main attached image catalog - Bottom position */}
         {imagePosition === 'bottom' && renderEditorImages()}
+
+        {/* Revision history collapsible section */}
+        {versions.length > 0 && (
+          <div className="p-2 border border-zinc-200/40 dark:border-zinc-800/40 rounded-xl bg-zinc-550/10 dark:bg-zinc-950/20 my-2 select-none z-10" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500 font-extrabold mb-1.5 uppercase">
+              <History className="h-3 w-3" />
+              <span>{isAr ? 'تاريخ المراجعات (آخر 3 تعديلات):' : 'Revision History (last 3 edits):'}</span>
+            </div>
+            <div className="space-y-1.5">
+              {versions.map((ver, vIdx) => (
+                <div key={vIdx} className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-zinc-100/50 dark:bg-zinc-900/60 text-[10px] font-semibold">
+                  <div className="truncate flex-1">
+                    <span className="font-bold block text-[9px] mb-0.5 opacity-80 text-zinc-500">{new Date(ver.updatedAt).toLocaleString(isAr ? 'ar-EG' : 'en-US')}</span>
+                    <span className="opacity-95 text-zinc-700 dark:text-zinc-300">{ver.title || (isAr ? 'بدون عنوان' : 'Untitled')} - {ver.content ? ver.content.substring(0, 30) + '...' : ''}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRollbackVersion(ver)}
+                    className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-stone-900 rounded-md text-[9px] font-black cursor-pointer shadow-xs transition-colors shrink-0"
+                  >
+                    {isAr ? 'استعادة' : 'Restore'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* AI Loading status & Error alerts */}
         {isAiLoading && (
@@ -814,7 +1257,7 @@ export default function NoteEditor({
         )}
 
         {/* Action bar widgets */}
-        <div className="flex flex-wrap items-center justify-between border-t border-zinc-150/50 dark:border-zinc-800/55 pt-3.5 mt-2 gap-3">
+        <div className="flex flex-wrap items-center justify-between border-t border-zinc-150/50 dark:border-zinc-800/55 pt-3.5 mt-2 gap-3 z-20">
           
           <div className="flex items-center gap-1 sm:gap-2 relative">
             
@@ -824,6 +1267,9 @@ export default function NoteEditor({
               onClick={() => {
                 setShowColorMenu(!showColorMenu);
                 setShowLabelMenu(false);
+                setShowPatternMenu(false);
+                setShowEmojiMenu(false);
+                setShowReminderForm(false);
               }}
               className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
               title={isAr ? 'خلفية الملاحظة' : 'Change color'}
@@ -834,7 +1280,7 @@ export default function NoteEditor({
             {/* Custom Color Selector Popup */}
             {showColorMenu && (
               <div 
-                className={`absolute bottom-11 ${isAr ? 'right-0' : 'left-0'} z-40 bg-white dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-800 p-2.5 rounded-xl shadow-2xl flex gap-1 animate-in slide-in-from-bottom-2 duration-100`}
+                className={`absolute bottom-11 ${isAr ? 'right-0' : 'left-0'} z-50 bg-white dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-800 p-2.5 rounded-xl shadow-2xl flex gap-1 animate-in slide-in-from-bottom-2 duration-100`}
                 onMouseLeave={() => setShowColorMenu(false)}
               >
                 {NOTE_COLORS.map((c) => (
@@ -852,12 +1298,201 @@ export default function NoteEditor({
               </div>
             )}
 
+            {/* Pattern picker */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowPatternMenu(!showPatternMenu);
+                setShowColorMenu(false);
+                setShowLabelMenu(false);
+                setShowEmojiMenu(false);
+                setShowReminderForm(false);
+              }}
+              className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
+              title={isAr ? 'نمط الورقة الخلفية' : 'Notebook paper pattern'}
+            >
+              <Paintbrush className={`h-4 w-4 ${pattern !== 'none' ? 'text-amber-500' : ''}`} />
+            </button>
+
+            {showPatternMenu && (
+              <div 
+                className={`absolute bottom-11 ${isAr ? 'right-0' : 'left-0'} z-50 bg-white dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-800 p-2.5 rounded-xl shadow-2xl flex flex-col gap-1.5 animate-in slide-in-from-bottom-2 duration-100 min-w-[124px]`}
+                onMouseLeave={() => setShowPatternMenu(false)}
+              >
+                {[
+                  { id: 'none', labelAr: 'سادة عادي', labelEn: 'Plain' },
+                  { id: 'dotted', labelAr: 'ورق منقط', labelEn: 'Dotted' },
+                  { id: 'grid', labelAr: 'ورق مربعات', labelEn: 'Grid' },
+                  { id: 'lined', labelAr: 'ورق مسطّر', labelEn: 'Lined' }
+                ].map((pat) => (
+                  <button
+                    key={pat.id}
+                    type="button"
+                    onClick={() => {
+                      setPattern(pat.id as any);
+                      setShowPatternMenu(false);
+                    }}
+                    className={`text-[11px] font-bold text-zinc-700 dark:text-zinc-300 py-1.5 px-2.5 rounded-md hover:bg-zinc-150 dark:hover:bg-zinc-900 cursor-pointer text-left ${pattern === pat.id ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : ''}`}
+                  >
+                    {isAr ? pat.labelAr : pat.labelEn}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Emoji cover picker popup */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowEmojiMenu(!showEmojiMenu);
+                setShowPatternMenu(false);
+                setShowColorMenu(false);
+                setShowLabelMenu(false);
+                setShowReminderForm(false);
+              }}
+              className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
+              title={isAr ? 'اختر رمز تعبيري' : 'Select Emoji symbol'}
+            >
+              <Smile className={`h-4 w-4 ${emoji ? 'text-amber-500' : ''}`} />
+            </button>
+
+            {showEmojiMenu && (
+              <div 
+                className={`absolute bottom-11 ${isAr ? 'right-0' : 'left-0'} z-50 bg-white dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-800 p-2.5 rounded-xl shadow-2xl animate-in slide-in-from-bottom-2 duration-100 max-h-36 overflow-y-auto w-44`}
+                onMouseLeave={() => setShowEmojiMenu(false)}
+              >
+                <div className="grid grid-cols-5 gap-1.5">
+                  {['⭐', '💡', '🚀', '📌', '🎨', '📝', '🗒️', '🕊️', '🔒', '❤️', '🔥', '🎉', '🌟', '⚠️', '🎯'].map(em => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => {
+                        setEmoji(em);
+                        setShowEmojiMenu(false);
+                      }}
+                      className="text-lg hover:bg-zinc-100 dark:hover:bg-zinc-900 p-1 rounded transition-transform hover:scale-115 cursor-pointer"
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Calendar deadlines system with repeat loops */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowReminderForm(!showReminderForm);
+                setShowEmojiMenu(false);
+                setShowPatternMenu(false);
+                setShowColorMenu(false);
+                setShowLabelMenu(false);
+              }}
+              className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
+              title={isAr ? 'تنبيه وميعاد تسليم' : 'Due date & Reminder schedule'}
+            >
+              <Clock className={`h-4 w-4 ${reminder ? 'text-amber-500' : ''}`} />
+            </button>
+
+            {showReminderForm && (
+              <div 
+                className={`absolute bottom-11 ${isAr ? 'right-0' : 'left-0'} z-50 bg-white dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-800 p-3 rounded-xl shadow-2xl flex flex-col gap-2 animate-in slide-in-from-bottom-2 duration-100 min-w-[210px] text-zinc-800 dark:text-zinc-200`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 block">
+                    {isAr ? 'تاريخ ووقت التنبيه:' : 'Choose Date & Time:'}
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={reminder}
+                    onChange={(e) => setReminder(e.target.value)}
+                    className="w-full text-xs p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 font-bold focus:outline-hidden text-zinc-800 dark:text-zinc-200"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 block">
+                    {isAr ? 'تكرار التذكير:' : 'Loop repeat interval:'}
+                  </span>
+                  <select
+                    value={reminderRepeat}
+                    onChange={(e) => setReminderRepeat(e.target.value as any)}
+                    className="w-full text-xs p-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 font-bold focus:outline-hidden text-zinc-805 dark:text-zinc-200 cursor-pointer"
+                  >
+                    <option value="none">{isAr ? 'بدون تكرار' : 'No Repeat'}</option>
+                    <option value="daily">{isAr ? 'يومياً' : 'Daily'}</option>
+                    <option value="weekly">{isAr ? 'أسبوعياً' : 'Weekly'}</option>
+                    <option value="monthly">{isAr ? 'شهرياً' : 'Monthly'}</option>
+                  </select>
+                </div>
+
+                <div className="flex gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!reminder) {
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        tomorrow.setHours(9, 0, 0, 0);
+                        const offsetTime = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                        setReminder(offsetTime);
+                      }
+                      setShowReminderForm(false);
+                    }}
+                    className="flex-1 py-1.5 px-2 bg-amber-500 hover:bg-amber-400 text-stone-900 rounded-lg text-[10px] font-black text-center cursor-pointer transition-colors shadow-xs"
+                  >
+                    {isAr ? 'حفظ' : 'OK'}
+                  </button>
+                  {reminder && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReminder('');
+                        setReminderRepeat('none');
+                        setShowReminderForm(false);
+                      }}
+                      className="py-1 px-2.5 bg-rose-500/10 hover:bg-rose-505 hover:text-white text-rose-500 rounded-lg text-[10px] font-black cursor-pointer transition-all"
+                    >
+                      {isAr ? 'مسح' : 'Clear'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Individual PIN LOCK selection code */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowReminderForm(false);
+                setShowEmojiMenu(false);
+                setShowPatternMenu(false);
+                setShowColorMenu(false);
+                setShowLabelMenu(false);
+                if (noteLockPIN) {
+                  setNoteLockPIN('');
+                } else {
+                  const typed = prompt(isAr ? 'أدخل كلمة مرور / PIN خاصة لقفل وحماية هذه الملاحظة تلقائياً:' : 'Enter custom password / PIN specifically for this note:', '1234');
+                  if (typed) setNoteLockPIN(typed);
+                }
+              }}
+              className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
+              title={noteLockPIN ? (isAr ? `الملاحظة مقفلة بـ PIN مخصصة: ${noteLockPIN} (اضغط للإلغاء)` : `Custom Locked with PIN: ${noteLockPIN} (Click to clear)`) : (isAr ? 'قفل وحماية الملاحظة بكلمة مرور PIN معزلة' : 'Lock note under custom Password PIN')}
+            >
+              <Lock className={`h-4 w-4 ${noteLockPIN ? 'text-amber-500 fill-amber-500/10' : ''}`} />
+            </button>
+
             {/* Labels popover Checklist selector */}
             <button
               type="button"
               onClick={() => {
                 setShowLabelMenu(!showLabelMenu);
                 setShowColorMenu(false);
+                setShowPatternMenu(false);
+                setShowEmojiMenu(false);
+                setShowReminderForm(false);
               }}
               className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
               title={isAr ? 'التصنيفات' : 'Add label'}
@@ -867,7 +1502,7 @@ export default function NoteEditor({
 
             {showLabelMenu && (
               <div 
-                className={`absolute bottom-11 ${isAr ? 'right-0' : 'left-0'} z-40 bg-white dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-800 p-3 rounded-xl shadow-2xl w-48 flex flex-col gap-1.5 animate-in slide-in-from-bottom-2 duration-100 max-h-56 overflow-y-auto scrollbar-thin`}
+                className={`absolute bottom-11 ${isAr ? 'right-0' : 'left-0'} z-50 bg-white dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-800 p-3 rounded-xl shadow-2xl w-48 flex flex-col gap-1.5 animate-in slide-in-from-bottom-2 duration-100 max-h-56 overflow-y-auto scrollbar-thin`}
                 onMouseLeave={() => setShowLabelMenu(false)}
               >
                 <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase px-1 pb-1 border-b border-zinc-150 dark:border-zinc-850">
@@ -901,7 +1536,7 @@ export default function NoteEditor({
               type="button"
               onClick={() => setIsWhiteboardOpen(true)}
               className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/60 cursor-pointer transition-colors"
-              title={isAr ? 'رسم كروكي' : 'Add sketch'}
+              title={isAr ? 'رسم كروكي لوحة بيضاء' : 'Add handwritten sketch'}
             >
               <Paintbrush className="h-4 w-4" />
             </button>
@@ -938,6 +1573,36 @@ export default function NoteEditor({
               title={isAr ? 'تلخيص كيب الذكي (Gemini)' : 'Smart Keep Summary (Gemini)'}
             >
               <Brain className="h-4.5 w-4.5" />
+            </button>
+
+            {/* Premium AI helper style proofreader */}
+            <button
+              type="button"
+              disabled={isAiLoading || !content.trim() || isChecklist || isTable}
+              onClick={handleAiProofread}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center ${
+                isAiLoading 
+                  ? 'text-pink-500 bg-pink-500/15 animate-pulse' 
+                  : 'text-pink-600 dark:text-pink-400 hover:bg-pink-100/50 dark:hover:bg-pink-950/20'
+              } disabled:opacity-30 disabled:cursor-not-allowed`}
+              title={isAr ? 'تصحيح وتطوير الصياغة (Gemini AI)' : 'AI Writing Improvement & Proofreading (Gemini)'}
+            >
+              <Type className="h-4.5 w-4.5" />
+            </button>
+
+            {/* Premium AI task extractor */}
+            <button
+              type="button"
+              disabled={isAiLoading || !content.trim() || isChecklist || isTable}
+              onClick={handleAiExtractTasks}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center justify-center ${
+                isAiLoading 
+                  ? 'text-sky-500 bg-sky-500/15 animate-pulse' 
+                  : 'text-sky-600 dark:text-sky-450 hover:bg-sky-100/50 dark:hover:bg-sky-950/20'
+              } disabled:opacity-30 disabled:cursor-not-allowed`}
+              title={isAr ? 'استخراج المهام الذكية لقائمة مهام (Gemini AI)' : 'Smart Task Extract to Checklist (Gemini)'}
+            >
+              <CheckSquare className="h-4.5 w-4.5" />
             </button>
 
             {/* AI Expand/Ideas Button */}
@@ -987,7 +1652,7 @@ export default function NoteEditor({
               className="p-2 rounded-lg text-zinc-550 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-805/60 cursor-pointer transition-colors"
               title={isTable ? (isAr ? 'الرجوع لنص عادي' : 'Convert to text') : (isAr ? 'تحويل لجدول إكسيل' : 'Convert to Excel table')}
             >
-              <LayoutGrid className={`h-4 w-4 ${isTable ? 'text-amber-500' : ''}`} />
+              <LayoutGrid className={`h-4 w-4 ${isTable ? 'text-amber-550' : ''}`} />
             </button>
           </div>
 
@@ -1008,10 +1673,10 @@ export default function NoteEditor({
               type="button"
               onClick={submitNote}
               disabled={isAiLoading}
-              className="py-1.5 px-4 bg-zinc-900 hover:bg-zinc-805 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-transform active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="py-1.5 px-4 bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-205 text-white dark:text-zinc-950 font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-transform active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Check className="h-3.5 w-3.5" />
-              <span>{isAr ? 'حفظ' : 'Close & Save'}</span>
+              <span>{isAr ? 'حفظ' : 'Save'}</span>
             </button>
           </div>
         </div>
